@@ -9,10 +9,11 @@ RSS feeds are handled by a separate service.
 Organization:
     - Sources organized by region
     - All sources use custom scrapers (no RSS)
+    - All sources are Tier 2
 
 Usage:
     from config.sources import get_source_name, get_source_config, SOURCES
-    from config.sources import get_custom_scraper_ids
+    from config.sources import get_custom_scraper_ids, get_sources_by_tier
 """
 
 from urllib.parse import urlparse
@@ -213,9 +214,39 @@ def get_sources_by_region(region: str) -> list[dict]:
     return result
 
 
+def get_sources_by_tier(tier: int) -> list[dict]:
+    """Get all sources for a specific tier. All custom scrapers are Tier 2."""
+    result = []
+    for source_id, config in SOURCES.items():
+        if config.get("tier", 2) == tier:
+            result.append({"id": source_id, **config})
+    return result
+
+
+def get_source_ids_by_tier(tier: int) -> list[str]:
+    """Get list of source IDs for a specific tier."""
+    return [
+        source_id for source_id, config in SOURCES.items()
+        if config.get("tier", 2) == tier
+    ]
+
+
 def get_all_source_ids() -> list[str]:
     """Get all source IDs."""
     return list(SOURCES.keys())
+
+
+def get_tested_sources() -> list[dict]:
+    """Get all tested/verified sources. For custom scrapers, all are considered tested."""
+    result = []
+    for source_id, config in SOURCES.items():
+        result.append({"id": source_id, **config})
+    return result
+
+
+def get_all_rss_sources() -> list[dict]:
+    """Get all sources with RSS. Custom scrapers don't have RSS, returns empty."""
+    return []
 
 
 def is_custom_scraper(source_id: str) -> bool:
@@ -229,6 +260,7 @@ def get_source_stats() -> dict:
         "total": len(SOURCES),
         "rss_sources": 0,
         "custom_scrapers": len(SOURCES),
+        "by_tier": {2: len(SOURCES)},
         "by_region": {},
     }
 
