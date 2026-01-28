@@ -225,13 +225,18 @@ class R2Storage:
     # =========================================================================
 
     def _get_image_extension(self, url: str, content_type: Optional[str] = None) -> str:
-        """Determine image extension from URL or content type."""
+        """
+        Determine image extension from URL or content type.
+
+        Note: WebP images are converted to JPEG before storage,
+        so we return 'jpg' for WebP content types.
+        """
         if content_type:
             mime_map = {
                 'image/jpeg': 'jpg',
                 'image/jpg': 'jpg',
                 'image/png': 'png',
-                'image/webp': 'webp',
+                'image/webp': 'jpg',  # WebP converted to JPEG
                 'image/gif': 'gif',
                 'image/svg+xml': 'svg',
             }
@@ -244,7 +249,8 @@ class R2Storage:
 
         for ext in ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg']:
             if path.endswith(f'.{ext}'):
-                return 'jpg' if ext == 'jpeg' else ext
+                # Convert webp to jpg since we're converting the format
+                return 'jpg' if ext in ['jpeg', 'webp'] else ext
 
         return 'jpg'
 
@@ -322,9 +328,12 @@ class R2Storage:
 
         if image_bytes:
             hero = article.get("hero_image", {})
+            # Get content_type from hero_image (set after conversion)
+            # This will be 'image/jpeg' for converted WebP images
+            content_type = hero.get("content_type", "image/jpeg")
             extension = self._get_image_extension(
                 hero.get("url", ""),
-                None
+                content_type  # Pass content_type to get correct extension
             )
             image_filename = f"{article_id}.{extension}"
             # Use shared images folder (NOT inside candidates/)

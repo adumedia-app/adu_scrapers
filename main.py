@@ -35,6 +35,10 @@ import argparse
 from datetime import datetime
 from typing import Optional
 
+from io import BytesIO
+from PIL import Image
+import aiohttp
+
 # Import operators
 from operators.scraper import ArticleScraper
 from operators.monitor import create_llm, summarize_article
@@ -208,6 +212,125 @@ def generate_summaries(articles: list, llm, prompt_template: str) -> list:
 
     return articles
 
+def convert_webp_to_jpeg(image_bytes: bytes, quality: int = 85) -> tuple[bytes, str]:
+    """
+    Convert WebP image to JPEG format.
+
+    Args:
+        image_bytes: Original image bytes (any format)
+        quality: JPEG quality (1-100, default 85)
+
+    Returns:
+        Tuple of (converted_bytes, content_type)
+        If already JPEG or conversion fails, returns original bytes
+    """
+    try:
+        # Open image from bytes
+        img = Image.open(BytesIO(image_bytes))
+
+        # Check if it's WebP or needs conversion
+        original_format = img.format
+
+        # If already JPEG, return as-is
+        if original_format == 'JPEG':
+            return image_bytes, 'image/jpeg'
+
+        # Convert RGBA to RGB (WebP often has alpha channel)
+        if img.mode in ('RGBA', 'LA', 'P'):
+            # Create white background
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        # Convert to JPEG
+        output = BytesIO()
+        img.save(output, format='JPEG', quality=quality, optimize=True)
+        jpeg_bytes = output.getvalue()
+
+        print(f"      [CONVERT] {original_format} → JPEG ({len(image_bytes)} → {len(jpeg_bytes)} bytes)")
+        return jpeg_bytes, 'image/jpeg'
+
+    except Exception as e:
+        print(f"      [WARN] Image conversion failed: {e} - using original")
+        return image_bytes, 'image/jpeg'  # Assume JPEG if conversion fails
+
+
+async def download_hero_images(articles: list) -> list:
+    """
+    Download hero images for articles that have URLs but no bytes yet.
+    Converts WebP and other formats to JPEG.
+
+    Args:
+        articles: List of articles with hero_image metadata
+
+    Returns:
+        Articles with hero_image.bytes populated and converted to JPEG
+    """
+    print(f"\n[IMAGES] Downloading and converting hero images...")
+
+    downloaded = 0
+    converted = 0
+    failed = 0
+
+    # Use aiohttp for direct image downloads
+    timeout = aiohttp.ClientTimeout(total=15)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+    }
+
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        for i, article in enumerate(articles, 1):
+            hero = article.get("hero_image")
+            if not hero or not hero.get("url"):
+                continue
+
+            # Skip if already has bytes (custom scraper downloaded it)
+            if hero.get("bytes"):
+                # Still convert if needed
+                if len(hero["bytes"]) > 0:
+                    converted_bytes, final_content_type = convert_webp_to_jpeg(hero["bytes"])
+                    hero["bytes"] = converted_bytes
+                    hero["content_type"] = final_content_type
+                    converted += 1
+                continue
+
+            image_url = hero["url"]
+            title = article.get("title", "No title")[:30]
+
+            try:
+                async with session.get(image_url) as response:
+                    if response.status == 200:
+                        image_bytes = await response.read()
+                        original_content_type = response.headers.get("Content-Type", "image/jpeg")
+
+                        # Convert WebP (and other formats) to JPEG
+                        converted_bytes, final_content_type = convert_webp_to_jpeg(image_bytes)
+
+                        # Store converted bytes in hero_image dict
+                        hero["bytes"] = converted_bytes
+                        hero["content_type"] = final_content_type
+                        hero["original_format"] = original_content_type
+
+                        downloaded += 1
+                        print(f"   [{i}] [OK] {title}...")
+                    else:
+                        failed += 1
+                        print(f"   [{i}] [FAIL] HTTP {response.status}: {title}...")
+
+            except asyncio.TimeoutError:
+                failed += 1
+                print(f"   [{i}] [TIMEOUT] {title}...")
+            except Exception as e:
+                failed += 1
+                print(f"   [{i}] [ERROR] {title}... {str(e)[:30]}")
+
+    print(f"\n   [STATS] Downloaded: {downloaded}, Converted: {converted}, Failed: {failed}")
+    return articles
 
 def save_candidates_to_r2(articles: list, r2: R2Storage) -> list:
     """
@@ -369,6 +492,17 @@ async def run_pipeline(
                 print("   Continuing with basic article data...")
         else:
             print("\n[STEP 2] Skipping content scraping (--no-scrape)")
+
+        # =================================================================
+        # Step 2.5: Download Hero Images (for articles that need it)
+        # =================================================================
+        if articles:
+            print("\n[STEP 2.5] Downloading and converting hero images...")
+            try:
+                articles = await download_hero_images(articles)
+            except Exception as e:
+                print(f"   [ERROR] Image download failed: {e}")
+                print("   Continuing without images...")
 
         # =================================================================
         # Step 3: AI Content Filtering (BEFORE summaries - saves API costs)
