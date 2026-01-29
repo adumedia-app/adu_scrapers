@@ -245,7 +245,7 @@ class MetropolisScraper(BaseCustomScraper):
                 print(f"   New articles: {len(new_urls)}")
 
                 # ============================================================
-                # Step 4: Mark All URLs as Seen
+                # Step 4: Mark All URLs as Seen (BEFORE any early returns)
                 # ============================================================
                 await self.tracker.mark_as_seen(self.source_id, all_urls)
 

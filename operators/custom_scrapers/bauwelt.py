@@ -231,6 +231,11 @@ Do not use any emoji in your response."""
 
                 print(f"[{self.source_id}] {len(new_urls)} new articles (not in database)")
 
+                # ============================================================
+                # Step 4: Mark URLs as Seen (BEFORE any early returns)
+                # ============================================================
+                await self.tracker.mark_as_seen(self.source_id, article_urls)
+
                 if not new_urls:
                     print(f"[{self.source_id}] No new articles to process")
                     return []
@@ -239,7 +244,7 @@ Do not use any emoji in your response."""
                 urls_to_process = new_urls[:self.MAX_NEW_ARTICLES]
 
                 # ============================================================
-                # Step 4: Create Minimal Article Dicts
+                # Step 5: Create Minimal Article Dicts
                 # ============================================================
                 # Main pipeline will handle: content scraping, date extraction, AI filtering
                 new_articles: list[dict] = []
@@ -258,11 +263,6 @@ Do not use any emoji in your response."""
 
                     if self._validate_article(article):
                         new_articles.append(article)
-
-                # ============================================================
-                # Step 5: Mark URLs as Seen and Finalize
-                # ============================================================
-                await self.tracker.mark_as_seen(self.source_id, article_urls)
 
                 # Final Summary
                 print(f"\n[{self.source_id}] Processing Summary:")

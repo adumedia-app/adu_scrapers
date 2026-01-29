@@ -146,6 +146,11 @@ class DomusScraper(BaseCustomScraper):
                 print(f"   Previously seen: {len(all_links) - len(new_urls)}")
                 print(f"   New to process: {len(new_urls)}")
 
+                # ============================================================
+                # Step 3: Mark URLs as Seen (BEFORE any early returns)
+                # ============================================================
+                await self.tracker.mark_as_seen(self.source_id, all_links)
+
                 if not new_urls:
                     print(f"[{self.source_id}] No new articles to process")
                     return []
@@ -154,7 +159,7 @@ class DomusScraper(BaseCustomScraper):
                 urls_to_process = new_urls[:self.MAX_NEW_ARTICLES]
 
                 # ============================================================
-                # Step 3: Create Minimal Article Dicts
+                # Step 4: Create Minimal Article Dicts
                 # ============================================================
                 # Main pipeline will handle: content scraping, date extraction, AI filtering
                 new_articles: list[dict] = []
@@ -172,12 +177,6 @@ class DomusScraper(BaseCustomScraper):
 
                     if self._validate_article(article):
                         new_articles.append(article)
-
-                # ============================================================
-                # Step 4: Mark URLs as Seen and Finalize
-                # ============================================================
-                # Mark all discovered article URLs as seen
-                await self.tracker.mark_as_seen(self.source_id, all_links)
 
                 # Final Summary
                 print(f"\n[{self.source_id}] Processing Summary:")
