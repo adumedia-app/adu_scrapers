@@ -5,7 +5,7 @@ Scrapes full article content from architecture news sites using Railway Browserl
 
 Features:
 - Persistent browser sessions for efficiency
-- Connection pooling (reuses browsers across URLs)
+- Page reuse (navigates with goto instead of creating new pages)
 - Aggressive ad/tracker blocking for speed
 - Hero image extraction from og:image meta tags
 - Image downloading for R2 storage
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 class ArticleScraper:
     """
     Scrapes architecture news articles using Railway Browserless.
-    Optimized for speed with persistent browser sessions.
+    Optimized for speed with persistent browser sessions and page reuse.
     """
 
     def __init__(self, browser_pool_size: int = 2):
@@ -59,6 +59,7 @@ class ArticleScraper:
         self.browser_pool_size = browser_pool_size
         self.browser_pool: List[Browser] = []
         self.browser_contexts: List[BrowserContext] = []
+        self.browser_pages: List[Page] = []  # Persistent pages - one per context
         self.playwright = None
         self.session_active = False
         self._session_lock = asyncio.Lock()
@@ -116,7 +117,7 @@ class ArticleScraper:
     # =========================================================================
 
     async def _initialize_browser_pool(self):
-        """Initialize persistent browser pool."""
+        """Initialize persistent browser pool with reusable pages."""
         if self.session_active:
             return
 
@@ -134,7 +135,14 @@ class ArticleScraper:
                         self.browser_pool.append(browser)
                         context = await self._create_context(browser)
                         self.browser_contexts.append(context)
-                        logger.info(f"   ✅ Browser {i + 1}/{self.browser_pool_size} ready")
+
+                        # Create a persistent page for this context
+                        # This keeps the browser alive (Browserless won't close it)
+                        page = await context.new_page()
+                        await self._configure_page(page)
+                        self.browser_pages.append(page)
+
+                        logger.info(f"   ✅ Browser {i + 1}/{self.browser_pool_size} ready with persistent page")
                 except Exception as e:
                     logger.error(f"   ❌ Browser {i + 1} failed: {e}")
 
@@ -197,6 +205,20 @@ class ArticleScraper:
         try:
             logger.info(f"🔄 Reconnecting browser-{index}...")
 
+            # Close old page if exists
+            if index < len(self.browser_pages) and self.browser_pages[index]:
+                try:
+                    await self.browser_pages[index].close()
+                except:
+                    pass
+
+            # Close old context if exists
+            if index < len(self.browser_contexts) and self.browser_contexts[index]:
+                try:
+                    await self.browser_contexts[index].close()
+                except:
+                    pass
+
             # Close old browser if exists
             if index < len(self.browser_pool) and self.browser_pool[index]:
                 try:
@@ -204,13 +226,18 @@ class ArticleScraper:
                 except:
                     pass
 
-            # Create new browser
+            # Create new browser, context, and page
             browser = await self._create_browser(f"browser-{index}")
             if browser:
                 context = await self._create_context(browser)
+                page = await context.new_page()
+                await self._configure_page(page)
+
                 self.browser_pool[index] = browser
                 self.browser_contexts[index] = context
-                logger.info(f"   ✅ Browser-{index} reconnected")
+                self.browser_pages[index] = page
+
+                logger.info(f"   ✅ Browser-{index} reconnected with new page")
                 return True
             return False
         except Exception as e:
@@ -241,34 +268,58 @@ class ArticleScraper:
         # Initialize browser pool
         await self._initialize_browser_pool()
 
-        # Create tasks with semaphore for concurrency control
-        semaphore = asyncio.Semaphore(self.browser_pool_size)
-        tasks = []
+        # Process articles sequentially per browser to avoid race conditions
+        # Each browser processes its share of articles one at a time
+        scraped_articles = []
 
+        # Distribute articles across browsers
+        articles_per_browser: List[List[tuple]] = [[] for _ in range(len(self.browser_pool))]
         for i, article in enumerate(articles):
             browser_index = i % len(self.browser_pool)
-            task = self._scrape_with_semaphore(semaphore, article, browser_index)
-            tasks.append(task)
+            articles_per_browser[browser_index].append((i, article))
 
-        # Execute all tasks
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Create tasks - one per browser, each processing its articles sequentially
+        async def process_browser_queue(browser_index: int, article_queue: List[tuple]) -> List[tuple]:
+            results = []
+            for original_index, article in article_queue:
+                result = await self._scrape_single_article(article, browser_index)
+                results.append((original_index, result))
+            return results
 
-        # Process results
-        scraped_articles = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.error(f"❌ Article {i} failed: {result}")
-                article = articles[i].copy()
-                article.update({
-                    "full_content": "",
-                    "images": [],
-                    "hero_image": None,
-                    "scrape_success": False,
-                    "scrape_error": str(result)
-                })
-                scraped_articles.append(article)
-            else:
-                scraped_articles.append(result)
+        tasks = [
+            process_browser_queue(browser_idx, queue)
+            for browser_idx, queue in enumerate(articles_per_browser)
+        ]
+
+        # Execute all browser tasks in parallel
+        all_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Flatten and sort results by original index
+        indexed_results = []
+        for browser_results in all_results:
+            if isinstance(browser_results, Exception):
+                logger.error(f"❌ Browser task failed: {browser_results}")
+                continue
+            indexed_results.extend(browser_results)
+
+        # Sort by original index and extract results
+        indexed_results.sort(key=lambda x: x[0])
+        scraped_articles = [result for _, result in indexed_results]
+
+        # Handle any missing articles (from failed browser tasks)
+        if len(scraped_articles) < len(articles):
+            scraped_set = {a.get("link") for a in scraped_articles}
+            for article in articles:
+                if article.get("link") not in scraped_set:
+                    article_copy = article.copy()
+                    article_copy.update({
+                        "full_content": "",
+                        "images": [],
+                        "hero_image": None,
+                        "scrape_success": False,
+                        "scrape_error": "Browser task failed"
+                    })
+                    scraped_articles.append(article_copy)
 
         # Update statistics
         total_time = time.time() - start_time
@@ -284,19 +335,9 @@ class ArticleScraper:
 
         return scraped_articles
 
-    async def _scrape_with_semaphore(
-        self, 
-        semaphore: asyncio.Semaphore, 
-        article: Dict, 
-        browser_index: int
-    ) -> Dict:
-        """Scrape article with semaphore for concurrency control."""
-        async with semaphore:
-            return await self._scrape_single_article(article, browser_index)
-
     async def _scrape_single_article(self, article: Dict, browser_index: int) -> Dict:
         """
-        Scrape a single article URL.
+        Scrape a single article URL using page reuse.
 
         Args:
             article: Article dict with 'link' key
@@ -318,84 +359,75 @@ class ArticleScraper:
         if browser_index >= len(self.browser_pool):
             browser_index = 0
 
-        context = self.browser_contexts[browser_index]
+        # Get the persistent page for this browser
+        page = self.browser_pages[browser_index]
 
         try:
             logger.info(f"🌐 Scraping: {url[:60]}...")
 
-            # Create new page
-            page = await context.new_page()
+            # Get timeout for this domain
+            domain = urlparse(url).netloc.lower()
+            timeout = self.domain_timeouts.get(
+                domain.replace('www.', ''), 
+                self.default_timeout
+            )
 
-            try:
-                # Configure page (block ads, etc.)
-                await self._configure_page(page)
+            # Navigate to page (reuse existing page instead of creating new one)
+            await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+            await asyncio.sleep(self.load_wait_time)
 
-                # Get timeout for this domain
-                domain = urlparse(url).netloc.lower()
-                timeout = self.domain_timeouts.get(
-                    domain.replace('www.', ''), 
-                    self.default_timeout
-                )
+            # Dismiss popups/overlays
+            await self._dismiss_overlays(page)
 
-                # Navigate to page
-                await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
-                await asyncio.sleep(self.load_wait_time)
+            # Check if article already has hero_image with bytes (from custom scraper)
+            # If so, preserve it and skip extraction
+            existing_hero = article.get("hero_image")
+            if existing_hero and existing_hero.get("bytes"):
+                hero_image = existing_hero
+                logger.info(f"   Preserving existing hero image from custom scraper")
+            else:
+                # Extract hero image (og:image) - do this FIRST before any DOM manipulation
+                hero_image = await self._extract_hero_image(page, url)
 
-                # Dismiss popups/overlays
-                await self._dismiss_overlays(page)
+                # Download hero image bytes for R2 storage
+                if hero_image and hero_image.get("url"):
+                    image_bytes = await self._download_hero_image_via_request(hero_image, page)
+                    if image_bytes:
+                        hero_image["bytes"] = image_bytes
+                        logger.info(f"   Hero image bytes downloaded: {len(image_bytes)} bytes")
 
-                # Check if article already has hero_image with bytes (from custom scraper)
-                # If so, preserve it and skip extraction
-                existing_hero = article.get("hero_image")
-                if existing_hero and existing_hero.get("bytes"):
-                    hero_image = existing_hero
-                    logger.info(f"   Preserving existing hero image from custom scraper")
-                else:
-                    # Extract hero image (og:image) - do this FIRST before any DOM manipulation
-                    hero_image = await self._extract_hero_image(page, url)
+            # Extract content
+            content = await self._extract_article_content(page, url)
 
-                    # Download hero image bytes for R2 storage
-                    if hero_image and hero_image.get("url"):
-                        image_bytes = await self.download_hero_image(hero_image, context)
-                        if image_bytes:
-                            hero_image["bytes"] = image_bytes
-                            logger.info(f"   Hero image bytes downloaded: {len(image_bytes)} bytes")
+            # Extract all images (for reference)
+            images = await self._extract_images(page, url)
 
-                # Extract content
-                content = await self._extract_article_content(page, url)
+            if content and len(content.strip()) > 100:
+                processing_time = time.time() - start_time
 
-                # Extract all images (for reference)
-                images = await self._extract_images(page, url)
+                result.update({
+                    "full_content": content,
+                    "images": images,
+                    "image_count": len(images),
+                    "hero_image": hero_image,
+                    "scrape_success": True,
+                    "scrape_time": processing_time,
+                    "content_length": len(content),
+                })
 
-                if content and len(content.strip()) > 100:
-                    processing_time = time.time() - start_time
+                if hero_image:
+                    self.stats["hero_images_found"] += 1
 
-                    result.update({
-                        "full_content": content,
-                        "images": images,
-                        "image_count": len(images),
-                        "hero_image": hero_image,
-                        "scrape_success": True,
-                        "scrape_time": processing_time,
-                        "content_length": len(content),
-                    })
-
-                    if hero_image:
-                        self.stats["hero_images_found"] += 1
-
-                    logger.info(f"   ✅ Success: {len(content)} chars, {len(images)} images, hero: {'✓' if hero_image else '✗'} in {processing_time:.1f}s")
-                else:
-                    result.update({
-                        "full_content": "",
-                        "images": [],
-                        "hero_image": hero_image,  # Still save hero image even if content extraction failed
-                        "scrape_success": False,
-                        "scrape_error": "Content too short or empty"
-                    })
-                    logger.warning(f"   ⚠️ Low content: {url[:40]}...")
-
-            finally:
-                await page.close()
+                logger.info(f"   ✅ Success: {len(content)} chars, {len(images)} images, hero: {'✓' if hero_image else '✗'} in {processing_time:.1f}s")
+            else:
+                result.update({
+                    "full_content": "",
+                    "images": [],
+                    "hero_image": hero_image,  # Still save hero image even if content extraction failed
+                    "scrape_success": False,
+                    "scrape_error": "Content too short or empty"
+                })
+                logger.warning(f"   ⚠️ Low content: {url[:40]}...")
 
         except PlaywrightTimeoutError:
             result.update({
@@ -408,16 +440,83 @@ class ArticleScraper:
             logger.warning(f"   ⏱️ Timeout: {url[:40]}...")
 
         except Exception as e:
+            error_msg = str(e)
+
+            # Check if browser was closed - attempt reconnection
+            if "Browser closed" in error_msg or "Target closed" in error_msg:
+                logger.warning(f"   🔄 Browser closed, attempting reconnection...")
+                reconnected = await self._reconnect_browser(browser_index)
+
+                if reconnected:
+                    # Update page reference and retry once
+                    page = self.browser_pages[browser_index]
+                    try:
+                        await page.goto(url, wait_until="domcontentloaded", timeout=self.default_timeout)
+                        await asyncio.sleep(self.load_wait_time)
+
+                        hero_image = await self._extract_hero_image(page, url)
+                        content = await self._extract_article_content(page, url)
+                        images = await self._extract_images(page, url)
+
+                        if content and len(content.strip()) > 100:
+                            processing_time = time.time() - start_time
+                            result.update({
+                                "full_content": content,
+                                "images": images,
+                                "image_count": len(images),
+                                "hero_image": hero_image,
+                                "scrape_success": True,
+                                "scrape_time": processing_time,
+                                "content_length": len(content),
+                            })
+                            logger.info(f"   ✅ Retry success after reconnection")
+                            return result
+                    except Exception as retry_error:
+                        logger.error(f"   ❌ Retry failed: {retry_error}")
+
             result.update({
                 "full_content": "",
                 "images": [],
                 "hero_image": None,
                 "scrape_success": False,
-                "scrape_error": str(e)
+                "scrape_error": error_msg
             })
-            logger.error(f"   ❌ Error: {e}")
+            logger.error(f"   ❌ Error: {error_msg[:50]}")
 
         return result
+
+    async def _download_hero_image_via_request(self, hero_image: Dict, page: Page) -> Optional[bytes]:
+        """
+        Download hero image bytes using page.request (no new page needed).
+
+        Args:
+            hero_image: Dict with 'url' key
+            page: Current page to use for request context
+
+        Returns:
+            Image bytes or None if failed
+        """
+        if not hero_image or not hero_image.get('url'):
+            return None
+
+        url = hero_image['url']
+
+        try:
+            # Use the page's request context to fetch the image
+            # This avoids creating a new page which could cause browser closure
+            response = await page.request.get(url, timeout=15000)
+
+            if response.ok:
+                image_bytes = await response.body()
+                logger.info(f"   📥 Downloaded hero image: {len(image_bytes)} bytes")
+                return image_bytes
+            else:
+                logger.warning(f"   ⚠️ Failed to download hero image: HTTP {response.status}")
+                return None
+
+        except Exception as e:
+            logger.error(f"   ❌ Hero image download error: {e}")
+            return None
 
     # =========================================================================
     # Page Configuration & Optimization
@@ -638,6 +737,9 @@ class ArticleScraper:
     async def download_hero_image(self, hero_image: Dict, context: BrowserContext = None) -> Optional[bytes]:
         """
         Download hero image bytes for storage.
+
+        Note: Prefer _download_hero_image_via_request() when you have a page available,
+        as it doesn't create a new page that could trigger browser closure.
 
         Args:
             hero_image: Dict with 'url' key
@@ -923,6 +1025,13 @@ class ArticleScraper:
         """Clean shutdown of browser pool."""
         logger.info("🛑 Shutting down scraper...")
 
+        # Close persistent pages first
+        for page in self.browser_pages:
+            try:
+                await page.close()
+            except:
+                pass
+
         # Close contexts
         for context in self.browser_contexts:
             try:
@@ -945,6 +1054,10 @@ class ArticleScraper:
                 pass
 
         self.session_active = False
+        self.browser_pages = []
+        self.browser_contexts = []
+        self.browser_pool = []
+
         self.print_stats()
         logger.info("✅ Scraper shutdown complete")
 
