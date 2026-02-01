@@ -1,23 +1,7 @@
 # operators/monitor.py
 """
-Architecture News Monitor
-Collects news from multiple RSS feeds and summarizes with AI.
-
-Usage:
-    # As module (called from main.py):
-    from operators.monitor import run_monitor, fetch_rss_feed
-
-    # Single source:
-    articles = await run_monitor(source_id="archdaily")
-
-    # Multiple sources:
-    articles = await run_multi_source_monitor(source_ids=["archdaily", "dezeen"])
-
-    # All Tier 1 sources:
-    articles = await run_tier1_monitor()
-
-Environment Variables (set in Railway):
-    OPENAI_API_KEY - OpenAI API key for GPT-4o-mini
+Architecture News Monitor for adu_scrapers
+Collects news from multiple sites feeds and summarizes with AI.
 """
 
 import os

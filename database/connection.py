@@ -1,6 +1,6 @@
-# database/connection.py
+# database/connection.py for adu_scrapers
 """
-Supabase Connection Handler for ADUmedia RSS/Scrapers
+Supabase Connection Handler for ADUmedia Custom Scrapers
 
 Provides connection to Supabase database for recording articles
 at fetch time (not just publish time).

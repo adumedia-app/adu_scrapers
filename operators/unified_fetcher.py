@@ -22,7 +22,6 @@ Usage:
 import asyncio
 from typing import List, Dict, Any, Optional
 
-from operators.rss_fetcher import RSSFetcher
 from operators.custom_scrapers import (
     has_custom_scraper,
     fetch_custom_source,

@@ -1,4 +1,4 @@
-# config/sources.py
+# config/sources.py for adu_scrapers
 """
 News Source Registry - Custom Scrapers Pipeline
 Configuration for custom scraper sources only (sites without working RSS feeds).
