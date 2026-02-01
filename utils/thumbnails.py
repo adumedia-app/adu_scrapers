@@ -2,7 +2,7 @@
 """
 Thumbnail Generation Utility for ADUmedia
 
-Generates square 400x400px thumbnails from article images.
+Generates horizontal 600x400px thumbnails (3:2 ratio) from article images.
 Stores both full-size and thumbnail versions in R2.
 """
 
@@ -15,8 +15,8 @@ import requests
 class ThumbnailGenerator:
     """Generate and process thumbnails for article images."""
     
-    # Target thumbnail size (square)
-    THUMBNAIL_SIZE = (400, 400)
+    # Target thumbnail size (horizontal rectangle, 3:2 ratio - height is 2/3 of width)
+    THUMBNAIL_SIZE = (600, 400)
     THUMBNAIL_QUALITY = 85
     THUMBNAIL_FORMAT = "JPEG"
     
@@ -50,7 +50,7 @@ class ThumbnailGenerator:
         size: Tuple[int, int] = None
     ) -> Optional[bytes]:
         """
-        Create a square thumbnail by center-cropping and resizing.
+        Create a horizontal thumbnail by center-cropping to 3:2 ratio and resizing.
         
         Args:
             image_bytes: Original image bytes
@@ -79,21 +79,27 @@ class ThumbnailGenerator:
             # Get dimensions
             width, height = img.size
             
-            # Calculate crop box for center square
-            if width > height:
-                # Landscape: crop sides
-                left = (width - height) // 2
-                right = left + height
+            # Target aspect ratio is 3:2 (width:height), i.e., height = width * 2/3
+            target_ratio = size[0] / size[1]  # 600/400 = 1.5
+            current_ratio = width / height
+            
+            # Calculate crop box for center crop to 3:2 ratio
+            if current_ratio > target_ratio:
+                # Image is wider than target: crop sides
+                new_width = int(height * target_ratio)
+                left = (width - new_width) // 2
+                right = left + new_width
                 top = 0
                 bottom = height
             else:
-                # Portrait or square: crop top/bottom
-                top = (height - width) // 2
-                bottom = top + width
+                # Image is taller than target: crop top/bottom
+                new_height = int(width / target_ratio)
+                top = (height - new_height) // 2
+                bottom = top + new_height
                 left = 0
                 right = width
             
-            # Crop to square
+            # Crop to 3:2 ratio
             img_cropped = img.crop((left, top, right, bottom))
             
             # Resize to target size
