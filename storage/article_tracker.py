@@ -1,13 +1,13 @@
 # storage/article_tracker.py
 """
-Article Tracker - PostgreSQL Database for Custom Scrapers
+Article Tracker - Supabase Database for Custom Scrapers
 
 Tracks seen article URLs to prevent reprocessing.
 Simple URL-based tracking: store URLs when discovered, filter against them next run.
 
 Database Schema:
-    - articles table: stores seen URLs per source
-    - Indexed by source_id and url for fast lookups
+    - scraped_articles table: stores seen URLs per source
+    - Unique constraint on (source_id, url) for fast lookups
 
 Usage:
     tracker = ArticleTracker()
@@ -19,12 +19,20 @@ Usage:
 """
 
 import os
-import asyncpg
 from typing import Optional, List
+from datetime import datetime
+
+# Import Supabase client
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    Client = None
 
 
 class ArticleTracker:
-    """PostgreSQL-based article URL tracking for custom scrapers."""
+    """Supabase-based article URL tracking for custom scrapers."""
 
     # ========================================
     # TEST MODE - Set to True to ignore "seen" status
@@ -33,66 +41,38 @@ class ArticleTracker:
     # ========================================
     TEST_MODE = os.getenv("SCRAPER_TEST_MODE", "").lower() == "true"
 
-    def __init__(self, connection_url: Optional[str] = None):
-        """
-        Initialize article tracker.
+    def __init__(self):
+        """Initialize article tracker with Supabase credentials from environment."""
+        if not SUPABASE_AVAILABLE:
+            raise ImportError("Supabase package not installed. Run: pip install supabase")
 
-        Args:
-            connection_url: PostgreSQL connection URL (defaults to DATABASE_URL env var)
-        """
-        self.connection_url = connection_url or os.getenv("DATABASE_URL")
+        self.supabase_url = os.getenv("SUPABASE_URL")
+        self.supabase_key = os.getenv("SUPABASE_KEY")
 
-        if not self.connection_url:
-            raise ValueError("DATABASE_URL environment variable not set")
+        if not self.supabase_url or not self.supabase_key:
+            raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables must be set")
 
-        self.pool: Optional[asyncpg.Pool] = None
+        self.client: Optional[Client] = None
 
     async def connect(self):
-        """Connect to PostgreSQL and initialize schema."""
-        if self.pool:
+        """Connect to Supabase."""
+        if self.client:
             return
 
-        # Create connection pool
-        self.pool = await asyncpg.create_pool(
-            self.connection_url,
-            min_size=1,
-            max_size=5,
-            command_timeout=60
-        )
+        try:
+            self.client = create_client(self.supabase_url, self.supabase_key)
 
-        # Initialize schema
-        await self._init_schema()
+            # Test connection by attempting a simple query
+            self.client.table("scraped_articles").select("id").limit(1).execute()
 
-        # Show mode status
-        if self.TEST_MODE:
-            print("⚠️  Article tracker TEST MODE ENABLED - all articles will appear as 'new'")
+            # Show mode status
+            if self.TEST_MODE:
+                print("⚠️  Article tracker TEST MODE ENABLED - all articles will appear as 'new'")
 
-        print("✅ Article tracker connected to PostgreSQL")
+            print("✅ Article tracker connected to Supabase")
 
-    async def _init_schema(self):
-        """Create articles table if it doesn't exist."""
-        if not self.pool:
-            raise RuntimeError("Not connected to database")
-
-        async with self.pool.acquire() as conn:
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS articles (
-                    id SERIAL PRIMARY KEY,
-                    source_id VARCHAR(100) NOT NULL,
-                    url TEXT NOT NULL,
-                    first_seen TIMESTAMP DEFAULT NOW(),
-                    last_checked TIMESTAMP DEFAULT NOW(),
-                    UNIQUE(source_id, url)
-                )
-            """)
-
-            # Create index for fast lookups
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_articles_source_url 
-                ON articles(source_id, url)
-            """)
-
-        print("✅ Article tracker schema initialized")
+        except Exception as e:
+            raise RuntimeError(f"Failed to connect to Supabase: {e}")
 
     # =========================================================================
     # URL Tracking - Core Methods
@@ -112,8 +92,8 @@ class ArticleTracker:
         Returns:
             List of URLs not previously seen (new articles)
         """
-        if not self.pool:
-            raise RuntimeError("Not connected to database")
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase")
 
         if not urls:
             return []
@@ -123,14 +103,16 @@ class ArticleTracker:
             print(f"   ⚠️  TEST MODE: Returning ALL {len(urls)} URLs as 'new'")
             return urls
 
-        async with self.pool.acquire() as conn:
-            # Get all existing URLs for this source (batch lookup)
-            rows = await conn.fetch("""
-                SELECT url FROM articles
-                WHERE source_id = $1 AND url = ANY($2)
-            """, source_id, urls)
+        try:
+            # Query Supabase for existing URLs
+            response = self.client.table("scraped_articles")\
+                .select("url")\
+                .eq("source_id", source_id)\
+                .in_("url", urls)\
+                .execute()
 
-            seen_urls = set(row['url'] for row in rows)
+            # Get set of seen URLs
+            seen_urls = set(row["url"] for row in response.data)
 
             # Return URLs not in database
             new_urls = [url for url in urls if url not in seen_urls]
@@ -138,6 +120,11 @@ class ArticleTracker:
             print(f"   Database: {len(seen_urls)} seen, {len(new_urls)} new")
 
             return new_urls
+
+        except Exception as e:
+            print(f"   ⚠️  Error filtering URLs: {e}")
+            # On error, return all URLs as "new" to be safe
+            return urls
 
     async def mark_as_seen(self, source_id: str, urls: List[str]) -> int:
         """
@@ -153,29 +140,30 @@ class ArticleTracker:
         Returns:
             Number of URLs marked as seen
         """
-        if not self.pool:
-            raise RuntimeError("Not connected to database")
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase")
 
         if not urls:
             return 0
 
         marked = 0
+        current_time = datetime.utcnow().isoformat()
 
-        async with self.pool.acquire() as conn:
-            for url in urls:
-                try:
-                    await conn.execute("""
-                        INSERT INTO articles (source_id, url)
-                        VALUES ($1, $2)
-                        ON CONFLICT (source_id, url) DO UPDATE
-                        SET last_checked = NOW()
-                    """, source_id, url)
+        for url in urls:
+            try:
+                # Try to insert new record
+                # If URL already exists, update last_checked timestamp
+                self.client.table("scraped_articles").upsert({
+                    "source_id": source_id,
+                    "url": url,
+                    "last_checked": current_time
+                }, on_conflict="source_id,url").execute()
 
-                    marked += 1
+                marked += 1
 
-                except Exception as e:
-                    print(f"   ⚠️  Error marking URL as seen: {e}")
-                    continue
+            except Exception as e:
+                print(f"   ⚠️  Error marking URL as seen: {e}")
+                continue
 
         print(f"   Marked {marked} URLs as seen in database")
         return marked
@@ -191,22 +179,26 @@ class ArticleTracker:
         Returns:
             True if URL exists in database
         """
-        if not self.pool:
-            raise RuntimeError("Not connected to database")
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase")
 
         # TEST MODE: Always return False (not seen)
         if self.TEST_MODE:
             return False
 
-        async with self.pool.acquire() as conn:
-            exists = await conn.fetchval("""
-                SELECT EXISTS(
-                    SELECT 1 FROM articles
-                    WHERE source_id = $1 AND url = $2
-                )
-            """, source_id, url)
+        try:
+            response = self.client.table("scraped_articles")\
+                .select("id")\
+                .eq("source_id", source_id)\
+                .eq("url", url)\
+                .limit(1)\
+                .execute()
 
-            return bool(exists)
+            return len(response.data) > 0
+
+        except Exception as e:
+            print(f"   ⚠️  Error checking URL: {e}")
+            return False
 
     # =========================================================================
     # Statistics
@@ -222,41 +214,73 @@ class ArticleTracker:
         Returns:
             Dict with statistics
         """
-        if not self.pool:
-            raise RuntimeError("Not connected to database")
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase")
 
-        async with self.pool.acquire() as conn:
+        try:
             if source_id:
-                count = await conn.fetchval("""
-                    SELECT COUNT(*) FROM articles WHERE source_id = $1
-                """, source_id)
+                # Count for specific source
+                count_response = self.client.table("scraped_articles")\
+                    .select("id", count="exact")\
+                    .eq("source_id", source_id)\
+                    .execute()
 
-                oldest = await conn.fetchval("""
-                    SELECT first_seen FROM articles
-                    WHERE source_id = $1
-                    ORDER BY first_seen ASC LIMIT 1
-                """, source_id)
+                count = count_response.count if hasattr(count_response, 'count') else len(count_response.data)
 
-                newest = await conn.fetchval("""
-                    SELECT first_seen FROM articles
-                    WHERE source_id = $1
-                    ORDER BY first_seen DESC LIMIT 1
-                """, source_id)
+                # Get oldest and newest
+                oldest_response = self.client.table("scraped_articles")\
+                    .select("first_seen")\
+                    .eq("source_id", source_id)\
+                    .order("first_seen", desc=False)\
+                    .limit(1)\
+                    .execute()
+
+                newest_response = self.client.table("scraped_articles")\
+                    .select("first_seen")\
+                    .eq("source_id", source_id)\
+                    .order("first_seen", desc=True)\
+                    .limit(1)\
+                    .execute()
+
+                oldest = oldest_response.data[0]["first_seen"] if oldest_response.data else None
+                newest = newest_response.data[0]["first_seen"] if newest_response.data else None
+
             else:
-                count = await conn.fetchval("SELECT COUNT(*) FROM articles")
-                oldest = await conn.fetchval("""
-                    SELECT first_seen FROM articles
-                    ORDER BY first_seen ASC LIMIT 1
-                """)
-                newest = await conn.fetchval("""
-                    SELECT first_seen FROM articles
-                    ORDER BY first_seen DESC LIMIT 1
-                """)
+                # Count all articles
+                count_response = self.client.table("scraped_articles")\
+                    .select("id", count="exact")\
+                    .execute()
+
+                count = count_response.count if hasattr(count_response, 'count') else len(count_response.data)
+
+                # Get oldest and newest
+                oldest_response = self.client.table("scraped_articles")\
+                    .select("first_seen")\
+                    .order("first_seen", desc=False)\
+                    .limit(1)\
+                    .execute()
+
+                newest_response = self.client.table("scraped_articles")\
+                    .select("first_seen")\
+                    .order("first_seen", desc=True)\
+                    .limit(1)\
+                    .execute()
+
+                oldest = oldest_response.data[0]["first_seen"] if oldest_response.data else None
+                newest = newest_response.data[0]["first_seen"] if newest_response.data else None
 
             return {
                 "total_articles": count or 0,
-                "oldest_seen": oldest.isoformat() if oldest else None,
-                "newest_seen": newest.isoformat() if newest else None,
+                "oldest_seen": oldest,
+                "newest_seen": newest,
+            }
+
+        except Exception as e:
+            print(f"   ⚠️  Error getting stats: {e}")
+            return {
+                "total_articles": 0,
+                "oldest_seen": None,
+                "newest_seen": None,
             }
 
     async def get_source_counts(self) -> dict:
@@ -266,18 +290,28 @@ class ArticleTracker:
         Returns:
             Dict mapping source_id to count
         """
-        if not self.pool:
-            raise RuntimeError("Not connected to database")
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase")
 
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT source_id, COUNT(*) as count
-                FROM articles
-                GROUP BY source_id
-                ORDER BY count DESC
-            """)
+        try:
+            # Get all articles grouped by source
+            response = self.client.table("scraped_articles")\
+                .select("source_id")\
+                .execute()
 
-            return {row['source_id']: row['count'] for row in rows}
+            # Count manually since Supabase doesn't have GROUP BY in the Python client
+            counts = {}
+            for row in response.data:
+                source_id = row["source_id"]
+                counts[source_id] = counts.get(source_id, 0) + 1
+
+            # Sort by count descending
+            sorted_counts = dict(sorted(counts.items(), key=lambda x: x[1], reverse=True))
+            return sorted_counts
+
+        except Exception as e:
+            print(f"   ⚠️  Error getting source counts: {e}")
+            return {}
 
     # =========================================================================
     # Maintenance
@@ -294,18 +328,30 @@ class ArticleTracker:
         Returns:
             Number of articles deleted
         """
-        if not self.pool:
-            raise RuntimeError("Not connected to database")
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase")
 
-        async with self.pool.acquire() as conn:
-            result = await conn.execute("""
-                DELETE FROM articles WHERE source_id = $1
-            """, source_id)
+        try:
+            # First, count how many we're deleting
+            count_response = self.client.table("scraped_articles")\
+                .select("id", count="exact")\
+                .eq("source_id", source_id)\
+                .execute()
 
-            # Extract count from result
-            deleted = int(result.split()[-1])
-            print(f"[{source_id}] Cleared {deleted} tracked URLs")
-            return deleted
+            count = count_response.count if hasattr(count_response, 'count') else len(count_response.data)
+
+            # Delete all articles for this source
+            self.client.table("scraped_articles")\
+                .delete()\
+                .eq("source_id", source_id)\
+                .execute()
+
+            print(f"[{source_id}] Cleared {count} tracked URLs")
+            return count
+
+        except Exception as e:
+            print(f"   ⚠️  Error clearing source: {e}")
+            return 0
 
     async def clear_all(self) -> int:
         """
@@ -315,22 +361,37 @@ class ArticleTracker:
         Returns:
             Number of articles deleted
         """
-        if not self.pool:
-            raise RuntimeError("Not connected to database")
+        if not self.client:
+            raise RuntimeError("Not connected to Supabase")
 
-        async with self.pool.acquire() as conn:
-            result = await conn.execute("DELETE FROM articles")
-            deleted = int(result.split()[-1])
-            print(f"⚠️  Cleared ALL {deleted} tracked URLs from database")
-            return deleted
+        try:
+            # First, count total
+            count_response = self.client.table("scraped_articles")\
+                .select("id", count="exact")\
+                .execute()
+
+            count = count_response.count if hasattr(count_response, 'count') else len(count_response.data)
+
+            # Delete all articles
+            self.client.table("scraped_articles")\
+                .delete()\
+                .neq("id", 0)\
+                .execute()  # Delete where id != 0 (deletes all)
+
+            print(f"⚠️  Cleared ALL {count} tracked URLs from database")
+            return count
+
+        except Exception as e:
+            print(f"   ⚠️  Error clearing all: {e}")
+            return 0
 
     # =========================================================================
     # Cleanup
     # =========================================================================
 
     async def close(self):
-        """Close database connection pool."""
-        if self.pool:
-            await self.pool.close()
-            self.pool = None
-            print("✅ Article tracker disconnected")
+        """Close Supabase connection (cleanup if needed)."""
+        # Supabase client doesn't need explicit closing
+        # But we'll set it to None for consistency
+        self.client = None
+        print("✅ Article tracker disconnected")
