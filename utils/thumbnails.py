@@ -2,7 +2,7 @@
 """
 Thumbnail Generation Utility for ADUmedia
 
-Generates horizontal 600x400px thumbnails (3:2 ratio) from article images.
+Generates horizontal 600x450px thumbnails (4:3 ratio) from article images.
 Stores both full-size and thumbnail versions in R2.
 """
 
@@ -15,8 +15,8 @@ import requests
 class ThumbnailGenerator:
     """Generate and process thumbnails for article images."""
     
-    # Target thumbnail size (horizontal rectangle, 3:2 ratio - height is 2/3 of width)
-    THUMBNAIL_SIZE = (600, 400)
+    # Target thumbnail size (horizontal rectangle, 4:3 ratio - height is 3/4 of width)
+    THUMBNAIL_SIZE = (600, 450)
     THUMBNAIL_QUALITY = 85
     THUMBNAIL_FORMAT = "JPEG"
     
@@ -50,7 +50,7 @@ class ThumbnailGenerator:
         size: Tuple[int, int] = None
     ) -> Optional[bytes]:
         """
-        Create a horizontal thumbnail by center-cropping to 3:2 ratio and resizing.
+        Create a horizontal thumbnail by center-cropping to 4:3 ratio and resizing.
         
         Args:
             image_bytes: Original image bytes
@@ -79,11 +79,11 @@ class ThumbnailGenerator:
             # Get dimensions
             width, height = img.size
             
-            # Target aspect ratio is 3:2 (width:height), i.e., height = width * 2/3
-            target_ratio = size[0] / size[1]  # 600/400 = 1.5
+            # Target aspect ratio is 4:3 (width:height), i.e., height = width * 3/4
+            target_ratio = size[0] / size[1]  # 600/450 = 1.33
             current_ratio = width / height
             
-            # Calculate crop box for center crop to 3:2 ratio
+            # Calculate crop box for center crop to 4:3 ratio
             if current_ratio > target_ratio:
                 # Image is wider than target: crop sides
                 new_width = int(height * target_ratio)
@@ -99,7 +99,7 @@ class ThumbnailGenerator:
                 left = 0
                 right = width
             
-            # Crop to 3:2 ratio
+            # Crop to 4:3 ratio
             img_cropped = img.crop((left, top, right, bottom))
             
             # Resize to target size
