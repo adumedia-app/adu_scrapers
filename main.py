@@ -59,6 +59,7 @@ from config.sources import (
     get_source_config,
     get_custom_scraper_ids,
 )
+from prompts.translate import translate_articles
 
 # Import custom scrapers
 from operators.custom_scrapers.identity import IdentityScraper
@@ -567,6 +568,19 @@ async def run_pipeline(
                     article["ai_summary"] = article.get("description", "")[:200] + "..."
                     article["tag"] = ""
 
+        # =================================================================
+        # Step 4.5: Translate Summaries
+        # =================================================================
+        print("\n[STEP 4.5] Translating summaries...")
+
+        try:
+            if not llm:
+                llm = create_llm()
+            articles = translate_articles(articles, llm)
+        except Exception as e:
+            print(f"   [ERROR] Translation failed: {e}")
+            print("   Continuing without translations...")
+        
         # =================================================================
         # Step 5: Save to R2 Storage + Record to Supabase
         # =================================================================
