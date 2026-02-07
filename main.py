@@ -356,6 +356,8 @@ def save_candidates_to_r2(articles: list, r2: R2Storage) -> list:
     r2.reset_counters()
 
     candidates = []
+    MIN_IMAGE_SIZE = 150 * 1024  # 150 KB minimum
+
     for article in articles:
         try:
             # Get hero image bytes if available
@@ -363,6 +365,12 @@ def save_candidates_to_r2(articles: list, r2: R2Storage) -> list:
             hero = article.get("hero_image")
             if hero and hero.get("bytes"):
                 image_bytes = hero["bytes"]
+
+            # Discard articles with missing or too-small images
+            if not image_bytes or len(image_bytes) < MIN_IMAGE_SIZE:
+                size_kb = len(image_bytes) / 1024 if image_bytes else 0
+                print(f"   ⚠️  Skipping (image {size_kb:.0f}KB < 150KB): {article.get('title', '')[:50]}")
+                continue
 
             # save_candidate handles both JSON and image
             result = r2.save_candidate(
