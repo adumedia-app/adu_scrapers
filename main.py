@@ -11,6 +11,8 @@ Pipeline:
     1. Run custom scrapers to discover new article URLs
     2. Scrape full article content (Browserless)
     3. AI content filtering (BEFORE summarization to save costs)
+       - Media sources: standard filter (filter.py)
+       - Studio sources: strict filter (filter_studio.py)
     4. Generate AI summaries (OpenAI) - only for filtered articles
     5. Save articles to R2 storage
     6. Record articles to Supabase (for cross-edition tracking)
@@ -54,10 +56,12 @@ from database.connection import record_batch_to_db, test_connection as test_db_c
 # Import prompts and config
 from prompts.summarize import SUMMARIZE_PROMPT_TEMPLATE
 from prompts.filter import FILTER_PROMPT_TEMPLATE, parse_filter_response
+from prompts.filter_studio import STUDIO_FILTER_PROMPT_TEMPLATE, parse_studio_filter_response
 from config.sources import (
     SOURCES,
     get_source_config,
     get_custom_scraper_ids,
+    is_studio_source,
 )
 from prompts.translate import translate_articles
 
@@ -170,7 +174,7 @@ def parse_args():
 
 def filter_articles(articles: list, llm) -> tuple[list, list]:
     """
-    Filter articles using AI - runs BEFORE summarization.
+    Filter MEDIA articles using AI - runs BEFORE summarization.
 
     Uses scraped full_content for better accuracy.
 
@@ -181,7 +185,7 @@ def filter_articles(articles: list, llm) -> tuple[list, list]:
     Returns:
         Tuple of (included_articles, excluded_articles)
     """
-    print(f"\n[FILTER] AI content filtering {len(articles)} articles...")
+    print(f"\n[FILTER] AI content filtering {len(articles)} media articles...")
 
     included = []
     excluded = []
@@ -226,6 +230,66 @@ def filter_articles(articles: list, llm) -> tuple[list, list]:
     return included, excluded
 
 
+def filter_studio_articles(articles: list, llm) -> tuple[list, list]:
+    """
+    Filter STUDIO articles using STRICT AI filter.
+
+    Studio pages post lots of irrelevant content (team updates, nominations,
+    minor projects). This filter only keeps genuinely significant news:
+    - Major project milestones (no private houses)
+    - Major award WINS (not nominations)
+    - Major firm announcements (death, rename, merger)
+
+    Args:
+        articles: List of articles from studio sources
+        llm: LLM instance
+
+    Returns:
+        Tuple of (included_articles, excluded_articles)
+    """
+    print(f"\n[STUDIO FILTER] Strict filtering {len(articles)} studio articles...")
+
+    included = []
+    excluded = []
+
+    for i, article in enumerate(articles, 1):
+        title = article.get("title", "No title")
+        source_name = article.get("source_name", article.get("source_id", "Unknown"))
+        print(f"   [{i}/{len(articles)}] [{source_name}] {title[:40]}...")
+
+        try:
+            content_for_filter = (
+                article.get("full_content", "") or
+                article.get("content", "") or
+                article.get("description", "")
+            )
+
+            # Create chain with studio-specific prompt
+            filter_chain = STUDIO_FILTER_PROMPT_TEMPLATE | llm
+
+            response = filter_chain.invoke({
+                "studio_name": source_name,
+                "title": title,
+                "description": article.get("description", "")[:500],
+                "content": content_for_filter[:1500]  # More context for stricter filter
+            })
+
+            result = parse_studio_filter_response(response.content)
+
+            if result.get("include", False):  # Default to EXCLUDE for studios
+                included.append(article)
+                print(f"      [OK] Included: {result.get('reason', 'N/A')}")
+            else:
+                excluded.append(article)
+                print(f"      [SKIP] Excluded: {result.get('reason', 'N/A')}")
+
+        except Exception as e:
+            print(f"      [WARN] Filter error: {e} - EXCLUDING by default (strict mode)")
+            excluded.append(article)  # Strict: exclude on error
+
+    return included, excluded
+
+
 def generate_summaries(articles: list, llm, prompt_template: str) -> list:
     """Generate AI summaries for articles."""
     print(f"\n[SUMMARY] Generating AI summaries for {len(articles)} articles...")
@@ -236,6 +300,17 @@ def generate_summaries(articles: list, llm, prompt_template: str) -> list:
         print(f"   [{i}/{len(articles)}] [{source_name}] {title[:40]}...")
 
         try:
+            # For studio sources, inject the studio name so the AI knows
+            # which firm this article is about (studio websites often don't
+            # mention their own name in article text)
+            source_id = article.get("source_id", "")
+            if is_studio_source(source_id):
+                studio_name = article.get("source_name", "")
+                if studio_name:
+                    studio_context = f"[This article is from {studio_name}'s official website.] "
+                    original_desc = article.get("description", "")
+                    article["description"] = studio_context + original_desc
+
             # summarize_article expects (article, llm, prompt_template)
             summarized = summarize_article(article, llm, prompt_template)
             article["headline"] = summarized.get("headline", "")
@@ -487,7 +562,7 @@ async def run_pipeline(
     print(f"[SCRAPERS] {len(valid_sources)}")
     print(f"   {', '.join(valid_sources)}")
     print(f"[LOOKBACK] {hours} hours")
-    print(f"[FILTER] {'disabled' if skip_filter else 'enabled'}")
+    print(f"[FILTER] {'disabled' if skip_filter else 'enabled (media + strict studio)'}")
     print(f"[SCRAPING] {'disabled' if skip_scraping else 'enabled'}")
     print(f"{'=' * 60}")
 
@@ -572,14 +647,45 @@ async def run_pipeline(
 
         # =================================================================
         # Step 3: AI Content Filtering (BEFORE summaries - saves API costs)
+        #   - Media sources → standard filter (filter.py)
+        #   - Studio sources → strict filter (filter_studio.py)
         # =================================================================
         if not skip_filter and articles:
             print("\n[STEP 3] AI content filtering...")
             try:
                 llm = create_llm()
-                articles, excluded_articles = filter_articles(articles, llm)
 
-                print(f"\n   [STATS] Filtered: {len(articles)} included, {len(excluded_articles)} excluded")
+                # Split articles into media vs studio sources
+                media_articles = []
+                studio_articles = []
+                for article in articles:
+                    sid = article.get("source_id", "")
+                    if is_studio_source(sid):
+                        studio_articles.append(article)
+                    else:
+                        media_articles.append(article)
+
+                print(f"   [SPLIT] Media: {len(media_articles)}, Studio: {len(studio_articles)}")
+
+                # Filter media articles (standard filter)
+                included_media = []
+                excluded_media = []
+                if media_articles:
+                    included_media, excluded_media = filter_articles(media_articles, llm)
+
+                # Filter studio articles (strict filter)
+                included_studio = []
+                excluded_studio = []
+                if studio_articles:
+                    included_studio, excluded_studio = filter_studio_articles(studio_articles, llm)
+
+                # Merge results
+                articles = included_media + included_studio
+                excluded_articles = excluded_media + excluded_studio
+
+                print(f"\n   [STATS] Media: {len(included_media)} included / {len(excluded_media)} excluded")
+                print(f"   [STATS] Studio: {len(included_studio)} included / {len(excluded_studio)} excluded")
+                print(f"   [STATS] Total: {len(articles)} included / {len(excluded_articles)} excluded")
 
                 if not articles:
                     print("\n[EMPTY] All articles filtered out. Exiting.")
@@ -617,7 +723,7 @@ async def run_pipeline(
         except Exception as e:
             print(f"   [ERROR] Translation failed: {e}")
             print("   Continuing without translations...")
-        
+
         # =================================================================
         # Step 5: Save to R2 Storage + Record to Supabase
         # =================================================================
@@ -652,17 +758,18 @@ def list_available_scrapers():
 
     all_custom = get_custom_scraper_ids()
 
-    print(f"\n{'Source ID':<35} {'Name':<25} {'Status':<12}")
-    print("-" * 72)
+    print(f"\n{'Source ID':<35} {'Name':<25} {'Type':<10} {'Status':<12}")
+    print("-" * 82)
 
     for source_id in all_custom:
         config = SOURCES.get(source_id, {})
         name = config.get("name", source_id)
+        source_type = "Studio" if is_studio_source(source_id) else "Media"
         if source_id in CUSTOM_SCRAPER_MAP:
             status = "Ready"
         else:
             status = "Not implemented"
-        print(f"{source_id:<35} {name:<25} {status:<12}")
+        print(f"{source_id:<35} {name:<25} {source_type:<10} {status:<12}")
 
     implemented_count = len([s for s in all_custom if s in CUSTOM_SCRAPER_MAP])
     print(f"\n[TOTAL] {len(all_custom)} configured, {implemented_count} implemented")

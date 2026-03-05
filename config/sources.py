@@ -10,10 +10,12 @@ Organization:
     - Sources organized by region
     - All sources use custom scrapers (no RSS)
     - All sources are Tier 2
+    - Studio sources marked with "is_studio": True
 
 Usage:
     from config.sources import get_source_name, get_source_config, SOURCES
     from config.sources import get_custom_scraper_ids, get_sources_by_tier
+    from config.sources import is_studio_source, get_studio_source_ids
 """
 
 from urllib.parse import urlparse
@@ -76,6 +78,7 @@ SOURCES = {
         "tier": 2,
         "region": "asia_pacific",
         "custom_scraper": True,
+        "is_studio": True,
     },
 
     # =========================================================================
@@ -124,6 +127,7 @@ SOURCES = {
         "tier": 2,
         "region": "europe",
         "custom_scraper": True,
+        "is_studio": True,
     },
     "snohetta": {
         "id": "snohetta",
@@ -132,6 +136,7 @@ SOURCES = {
         "tier": 2,
         "region": "europe",
         "custom_scraper": True,
+        "is_studio": True,
     },
     "mvrdv": {
         "id": "mvrdv",
@@ -140,6 +145,7 @@ SOURCES = {
         "tier": 2,
         "region": "europe",
         "custom_scraper": True,
+        "is_studio": True,
     },
     "david_chipperfield": {
         "id": "david_chipperfield",
@@ -148,6 +154,7 @@ SOURCES = {
         "tier": 2,
         "region": "europe",
         "custom_scraper": True,
+        "is_studio": True,
     },
     "buro_ole_scheeren": {
         "id": "buro_ole_scheeren",
@@ -156,6 +163,7 @@ SOURCES = {
         "tier": 2,
         "region": "europe",
         "custom_scraper": True,
+        "is_studio": True,
     },
     "henn": {
         "id": "henn",
@@ -164,6 +172,7 @@ SOURCES = {
         "tier": 2,
         "region": "europe",
         "custom_scraper": True,
+        "is_studio": True,
     },
     "shl": {
         "id": "shl",
@@ -172,6 +181,7 @@ SOURCES = {
         "tier": 2,
         "region": "europe",
         "custom_scraper": True,
+        "is_studio": True,
     },
     "mecanoo": {
         "id": "mecanoo",
@@ -180,6 +190,7 @@ SOURCES = {
         "tier": 2,
         "region": "europe",
         "custom_scraper": True,
+        "is_studio": True,
     },
     "rshp": {
         "id": "rshp",
@@ -188,6 +199,7 @@ SOURCES = {
         "tier": 2,
         "region": "europe",
         "custom_scraper": True,
+        "is_studio": True,
     },
     "studio_egret_west": {
         "id": "studio_egret_west",
@@ -196,6 +208,7 @@ SOURCES = {
         "tier": 2,
         "region": "europe",
         "custom_scraper": True,
+        "is_studio": True,
     },
 
     # =========================================================================
@@ -229,6 +242,7 @@ SOURCES = {
         "tier": 2,
         "region": "north_america",
         "custom_scraper": True,
+        "is_studio": True,
     },
 
     # =========================================================================
@@ -262,6 +276,7 @@ SOURCES = {
         "tier": 2,
         "region": "international",
         "custom_scraper": True,
+        "is_studio": True,
     },
 }
 
@@ -378,12 +393,29 @@ def is_custom_scraper(source_id: str) -> bool:
     return source_id in SOURCES
 
 
+def is_studio_source(source_id: str) -> bool:
+    """Check if a source is a studio (not a media publication)."""
+    config = SOURCES.get(source_id, {})
+    return config.get("is_studio", False)
+
+
+def get_studio_source_ids() -> list[str]:
+    """Get all source IDs that are architecture studios."""
+    return [
+        source_id for source_id, config in SOURCES.items()
+        if config.get("is_studio", False)
+    ]
+
+
 def get_source_stats() -> dict:
     """Get statistics about configured sources."""
+    studio_count = len(get_studio_source_ids())
     stats = {
         "total": len(SOURCES),
         "rss_sources": 0,
         "custom_scrapers": len(SOURCES),
+        "studios": studio_count,
+        "media": len(SOURCES) - studio_count,
         "by_tier": {2: len(SOURCES)},
         "by_region": {},
     }
@@ -406,6 +438,8 @@ if __name__ == "__main__":
 
     stats = get_source_stats()
     print(f"\nTotal custom scrapers: {stats['total']}")
+    print(f"  Media sources: {stats['media']}")
+    print(f"  Studio sources: {stats['studios']}")
 
     print("\nBy Region:")
     for region, count in sorted(stats["by_region"].items()):
@@ -414,4 +448,7 @@ if __name__ == "__main__":
     print("\nAll Custom Scrapers:")
     for source_id in get_custom_scraper_ids():
         config = SOURCES[source_id]
-        print(f"  {source_id:35} [{config['region']}] {config['name']}")
+        studio_tag = " [STUDIO]" if config.get("is_studio") else ""
+        print(f"  {source_id:35} [{config['region']}] {config['name']}{studio_tag}")
+
+    print(f"\nStudio Sources: {', '.join(get_studio_source_ids())}")
