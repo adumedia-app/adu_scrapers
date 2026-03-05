@@ -66,6 +66,9 @@ SOURCES = {
         "region": "asia_pacific",
         "custom_scraper": True,
     },
+
+    # --- Studio Scrapers (Asia-Pacific) ---
+
     "hassell": {
         "id": "hassell",
         "name": "Hassell",
@@ -74,27 +77,11 @@ SOURCES = {
         "region": "asia_pacific",
         "custom_scraper": True,
     },
-    "archello": {
-        "id": "archello",
-        "name": "Archello",
-        "domains": ["archello.com", "www.archello.com"],
-        "tier": 2,
-        "region": "international",
-        "custom_scraper": True,
-    },
 
     # =========================================================================
     # Europe
     # =========================================================================
 
-    "studio_gang": {
-        "id": "studio_gang",
-        "name": "Studio Gang",
-        "domains": ["studiogang.com", "www.studiogang.com"],
-        "tier": 2,
-        "region": "north_america",
-        "custom_scraper": True,
-    },
     "prorus": {
         "id": "prorus",
         "name": "ProRus",
@@ -233,10 +220,29 @@ SOURCES = {
         "custom_scraper": True,
     },
 
+    # --- Studio Scrapers (North America) ---
+
+    "studio_gang": {
+        "id": "studio_gang",
+        "name": "Studio Gang",
+        "domains": ["studiogang.com", "www.studiogang.com"],
+        "tier": 2,
+        "region": "north_america",
+        "custom_scraper": True,
+    },
+
     # =========================================================================
     # International
     # =========================================================================
 
+    "archello": {
+        "id": "archello",
+        "name": "Archello",
+        "domains": ["archello.com", "www.archello.com"],
+        "tier": 2,
+        "region": "international",
+        "custom_scraper": True,
+    },
     "world_landscape_architect": {
         "id": "world_landscape_architect",
         "name": "World Landscape Architect",
@@ -246,6 +252,9 @@ SOURCES = {
         "category": "landscape",
         "custom_scraper": True,
     },
+
+    # --- Studio Scrapers (International) ---
+
     "populous": {
         "id": "populous",
         "name": "Populous",
