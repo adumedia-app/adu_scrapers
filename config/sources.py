@@ -66,11 +66,35 @@ SOURCES = {
         "region": "asia_pacific",
         "custom_scraper": True,
     },
+    "hassell": {
+        "id": "hassell",
+        "name": "Hassell",
+        "domains": ["hassellstudio.com", "www.hassellstudio.com"],
+        "tier": 2,
+        "region": "asia_pacific",
+        "custom_scraper": True,
+    },
+    "archello": {
+        "id": "archello",
+        "name": "Archello",
+        "domains": ["archello.com", "www.archello.com"],
+        "tier": 2,
+        "region": "international",
+        "custom_scraper": True,
+    },
 
     # =========================================================================
     # Europe
     # =========================================================================
 
+    "studio_gang": {
+        "id": "studio_gang",
+        "name": "Studio Gang",
+        "domains": ["studiogang.com", "www.studiogang.com"],
+        "tier": 2,
+        "region": "north_america",
+        "custom_scraper": True,
+    },
     "prorus": {
         "id": "prorus",
         "name": "ProRus",
@@ -104,6 +128,89 @@ SOURCES = {
         "custom_scraper": True,
     },
 
+    # --- Studio Scrapers (Europe) ---
+
+    "big": {
+        "id": "big",
+        "name": "BIG",
+        "domains": ["big.dk", "www.big.dk"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+    },
+    "snohetta": {
+        "id": "snohetta",
+        "name": "Snøhetta",
+        "domains": ["snohetta.com", "www.snohetta.com"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+    },
+    "mvrdv": {
+        "id": "mvrdv",
+        "name": "MVRDV",
+        "domains": ["mvrdv.com", "www.mvrdv.com"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+    },
+    "david_chipperfield": {
+        "id": "david_chipperfield",
+        "name": "David Chipperfield Architects",
+        "domains": ["davidchipperfield.com", "www.davidchipperfield.com"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+    },
+    "buro_ole_scheeren": {
+        "id": "buro_ole_scheeren",
+        "name": "Büro Ole Scheeren",
+        "domains": ["buro-os.com", "www.buro-os.com"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+    },
+    "henn": {
+        "id": "henn",
+        "name": "HENN",
+        "domains": ["henn.com", "www.henn.com"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+    },
+    "shl": {
+        "id": "shl",
+        "name": "Schmidt Hammer Lassen",
+        "domains": ["shl.dk", "www.shl.dk"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+    },
+    "mecanoo": {
+        "id": "mecanoo",
+        "name": "Mecanoo",
+        "domains": ["mecanoo.nl", "www.mecanoo.nl"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+    },
+    "rshp": {
+        "id": "rshp",
+        "name": "RSHP",
+        "domains": ["rshp.com", "www.rshp.com"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+    },
+    "studio_egret_west": {
+        "id": "studio_egret_west",
+        "name": "Studio Egret West",
+        "domains": ["studioegretwest.com", "www.studioegretwest.com"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+    },
+
     # =========================================================================
     # North America
     # =========================================================================
@@ -125,14 +232,6 @@ SOURCES = {
         "category": "landscape",
         "custom_scraper": True,
     },
-    "archello": {
-        "id": "archello",
-        "name": "Archello",
-        "domains": ["archello.com", "www.archello.com"],
-        "tier": 2,
-        "region": "international",
-        "custom_scraper": True,
-    },
 
     # =========================================================================
     # International
@@ -145,6 +244,14 @@ SOURCES = {
         "tier": 2,
         "region": "international",
         "category": "landscape",
+        "custom_scraper": True,
+    },
+    "populous": {
+        "id": "populous",
+        "name": "Populous",
+        "domains": ["populous.com", "www.populous.com"],
+        "tier": 2,
+        "region": "international",
         "custom_scraper": True,
     },
 }

@@ -74,6 +74,22 @@ from operators.custom_scrapers.metropolis import MetropolisScraper
 from operators.custom_scrapers.world_landscape_architect import WorldLandscapeArchitectScraper
 from operators.custom_scrapers.landscape_architecture_magazine import LandscapeArchitectureMagazineScraper
 
+# Studio custom scrapers
+from operators.custom_scrapers.big import BigScraper
+from operators.custom_scrapers.snohetta import SnohettaScraper
+from operators.custom_scrapers.mvrdv import MvrdvScraper
+from operators.custom_scrapers.david_chipperfield import DavidChipperfieldScraper
+from operators.custom_scrapers.buro_ole_scheeren import BuroOleScheerenScraper
+from operators.custom_scrapers.henn import HennScraper
+from operators.custom_scrapers.shl import ShlScraper
+from operators.custom_scrapers.mecanoo import MecanooScraper
+from operators.custom_scrapers.rshp import RshpScraper
+from operators.custom_scrapers.studio_egret_west import StudioEgretWestScraper
+from operators.custom_scrapers.hassell import HassellScraper
+from operators.custom_scrapers.populous import PopulousScraper
+from operators.custom_scrapers.studio_gang import StudioGangScraper
+
+
 # Default configuration
 DEFAULT_HOURS_LOOKBACK = 24
 
@@ -90,6 +106,21 @@ CUSTOM_SCRAPER_MAP = {
     "metropolis": MetropolisScraper,
     "world_landscape_architect": WorldLandscapeArchitectScraper,
     "landscape_architecture_magazine": LandscapeArchitectureMagazineScraper,
+
+    # --- Studio Scrapers (HTTP-based) ---
+    "big": BigScraper,
+    "snohetta": SnohettaScraper,
+    "mvrdv": MvrdvScraper,
+    "david_chipperfield": DavidChipperfieldScraper,
+    "buro_ole_scheeren": BuroOleScheerenScraper,
+    "henn": HennScraper,
+    "shl": ShlScraper,
+    "mecanoo": MecanooScraper,
+    "rshp": RshpScraper,
+    "studio_egret_west": StudioEgretWestScraper,
+    "hassell": HassellScraper,
+    "populous": PopulousScraper,
+    "studio_gang": StudioGangScraper,
 }
 
 
