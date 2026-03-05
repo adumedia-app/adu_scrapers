@@ -125,6 +125,14 @@ SOURCES = {
         "category": "landscape",
         "custom_scraper": True,
     },
+    "archello": {
+        "id": "archello",
+        "name": "Archello",
+        "domains": ["archello.com", "www.archello.com"],
+        "tier": 2,
+        "region": "international",
+        "custom_scraper": True,
+    },
 
     # =========================================================================
     # International
