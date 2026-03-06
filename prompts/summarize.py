@@ -167,7 +167,7 @@ def parse_summary_response(response_text: str) -> dict:
             if len(lines) >= 4:
                 tag_val = lines[3].lower().strip().lstrip('#')
                 if tag_val and tag_val not in ("unknown", "various", "none", "n/a"):
-                    tags.append(f"#{tag_val}")
+                    tags.append(tag_val)
             if len(lines) >= 5:
                 country_val = lines[4].lower().strip().lstrip('#')
                 if country_val and country_val not in ("unknown", "various", "none", "n/a"):
@@ -181,7 +181,7 @@ def parse_summary_response(response_text: str) -> dict:
             if len(lines) >= 3:
                 tag_val = lines[2].lower().strip().lstrip('#')
                 if tag_val and tag_val not in ("unknown", "various", "none", "n/a"):
-                    tags.append(f"#{tag_val}")
+                    tags.append(tag_val)
             if len(lines) >= 4:
                 country_val = lines[3].lower().strip().lstrip('#')
                 if country_val and country_val not in ("unknown", "various", "none", "n/a"):
