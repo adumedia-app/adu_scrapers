@@ -315,12 +315,12 @@ def generate_summaries(articles: list, llm, prompt_template: str) -> list:
             summarized = summarize_article(article, llm, prompt_template)
             article["headline"] = summarized.get("headline", "")
             article["ai_summary"] = summarized.get("ai_summary", "")
-            article["tag"] = summarized.get("tag", "")
+            article["tags"] = summarized.get("tags", [])
         except Exception as e:
             print(f"      [WARN] Error: {e}")
             article["headline"] = article.get("title", "")
             article["ai_summary"] = article.get("description", "")[:200] + "..."
-            article["tag"] = ""
+            article["tags"] = []
 
     return articles
 
@@ -711,7 +711,7 @@ async def run_pipeline(
                 if not article.get("ai_summary"):
                     article["headline"] = article.get("title", "")
                     article["ai_summary"] = article.get("description", "")[:200] + "..."
-                    article["tag"] = ""
+                    article["tags"] = []
 
         # =================================================================
         # Step 4.5: Translate Summaries (DeepL)
