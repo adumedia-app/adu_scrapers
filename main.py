@@ -92,6 +92,7 @@ from operators.custom_scrapers.studio_egret_west import StudioEgretWestScraper
 from operators.custom_scrapers.hassell import HassellScraper
 from operators.custom_scrapers.populous import PopulousScraper
 from operators.custom_scrapers.studio_gang import StudioGangScraper
+from operators.custom_scrapers.som import SomScraper
 
 
 # Default configuration
@@ -125,6 +126,7 @@ CUSTOM_SCRAPER_MAP = {
     "hassell": HassellScraper,
     "populous": PopulousScraper,
     "studio_gang": StudioGangScraper,
+    "som": SomScraper,
 }
 
 
