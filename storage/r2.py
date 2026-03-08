@@ -41,6 +41,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from utils.thumbnails import ThumbnailGenerator, get_thumbnail_path
+from config.sources import is_studio_source
 
 
 class R2Storage:
@@ -404,13 +405,16 @@ class R2Storage:
             "index": index,
             "source_id": source_id,
             "source_name": article.get("source_name", source_id),
+            "is_studio": is_studio_source(source_id),
             "title": article.get("title", ""),
             "link": article.get("link", ""),
             "published": article.get("published"),
-            "headline": article.get("headline", ""),
+            "headline_line_1": article.get("headline_line_1", ""),
+            "headline_line_2": article.get("headline_line_2", ""),
             "ai_summary": article.get("ai_summary", ""),
             "tags": article.get("tags", []),
-            "headline_translations": article.get("headline_translations", {}),
+            "headline_line_1_translations": article.get("headline_line_1_translations", {}),
+            "headline_line_2_translations": article.get("headline_line_2_translations", {}),
             "ai_summary_translations": article.get("ai_summary_translations", {}),
             "image": {
                 "filename": image_filename,

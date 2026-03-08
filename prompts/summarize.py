@@ -123,7 +123,7 @@ def _is_typology_location_line(line: str) -> bool:
 
 def parse_summary_response(response_text: str) -> dict:
     """
-    Parse AI response into headline (two-liner), summary, and tags.
+    Parse AI response into headline lines, summary, and tags.
 
     The AI returns consecutive lines (no blank lines):
         Line 1: Project Name / Architect
@@ -133,20 +133,21 @@ def parse_summary_response(response_text: str) -> dict:
         Line 5: country tag (e.g., sweden)  (optional)
 
     The parser detects whether line 2 is a typology/location header or already the summary,
-    then assembles a two-line headline joined by a blank line for display:
-
-        "Project Name / Architect\\n\\nTypology / City, Country"
+    then returns the two headline parts as separate fields so each can be translated
+    independently without DeepL collapsing the newline separator.
 
     Returns:
         Dict with:
-        - 'headline': two-line string (parts joined by \\n\\n), or single line if no second part
+        - 'headline_line_1': first header line (project / architect)
+        - 'headline_line_2': second header line (typology / city, country), or "" if absent
         - 'summary': the 2-sentence summary
         - 'tag': first tag as string (typology, for backward compatibility)
         - 'tags': list of tags [typology_tag, country_tag], filtering out empty values
     """
     lines = [line.strip() for line in response_text.strip().split('\n') if line.strip()]
 
-    headline = ""
+    headline_line_1 = ""
+    headline_line_2 = ""
     summary = ""
     tag = ""
     tags = []
@@ -156,9 +157,8 @@ def parse_summary_response(response_text: str) -> dict:
 
         # Check if line 2 is a typology/location header or the summary
         if _is_typology_location_line(lines[1]):
-            # Line 2 is the second header line
-            header_line2 = lines[1]
-            headline = f"{header_line1}\n\n{header_line2}"
+            headline_line_1 = header_line1
+            headline_line_2 = lines[1]
 
             # Summary is the next line
             summary = lines[2] if len(lines) >= 3 else ""
@@ -167,49 +167,53 @@ def parse_summary_response(response_text: str) -> dict:
             if len(lines) >= 4:
                 tag_val = lines[3].lower().strip().lstrip('#')
                 if tag_val and tag_val not in ("unknown", "various", "none", "n/a"):
-                    tags.append(f"#{tag_val}")
+                    tags.append(tag_val)
             if len(lines) >= 5:
                 country_val = lines[4].lower().strip().lstrip('#')
                 if country_val and country_val not in ("unknown", "various", "none", "n/a"):
                     tags.append(country_val)
         else:
             # No typology/location line — line 2 is the summary
-            headline = header_line1
+            headline_line_1 = header_line1
+            headline_line_2 = ""
             summary = lines[1]
 
             # Tags start at line 3
             if len(lines) >= 3:
                 tag_val = lines[2].lower().strip().lstrip('#')
                 if tag_val and tag_val not in ("unknown", "various", "none", "n/a"):
-                    tags.append(f"#{tag_val}")
+                    tags.append(tag_val)
             if len(lines) >= 4:
                 country_val = lines[3].lower().strip().lstrip('#')
                 if country_val and country_val not in ("unknown", "various", "none", "n/a"):
                     tags.append(country_val)
 
     elif len(lines) == 1:
-        headline = ""
+        headline_line_1 = ""
+        headline_line_2 = ""
         summary = lines[0]
-    else:
-        headline = ""
-        summary = ""
 
     # First tag (typology) as string for backward compatibility
     tag = tags[0] if tags else ""
 
-    # Safety net: strip "Unknown" variants from headline
-    if headline:
-        headline = re.sub(r'\s*/\s*Unknown\s*$', '', headline, flags=re.IGNORECASE)
-        headline = re.sub(r'\s*/\s*Unknown\s+Architect(s)?\s*$', '', headline, flags=re.IGNORECASE)
-        headline = re.sub(r'\s*/\s*Unknown\s+Bureau\s*$', '', headline, flags=re.IGNORECASE)
-        headline = re.sub(r'\s*/\s*Unknown\s+Studio\s*$', '', headline, flags=re.IGNORECASE)
-        headline = re.sub(r'\bVarious\b', '', headline, flags=re.IGNORECASE)
-        # Clean up leftover empty second line
-        headline = re.sub(r'\n\n\s*$', '', headline)
-        headline = re.sub(r'  +', ' ', headline).strip()
+    # Safety net: strip "Unknown" variants from headline lines
+    def _clean_headline(h: str) -> str:
+        if not h:
+            return h
+        h = re.sub(r'\s*/\s*Unknown\s*$', '', h, flags=re.IGNORECASE)
+        h = re.sub(r'\s*/\s*Unknown\s+Architect(s)?\s*$', '', h, flags=re.IGNORECASE)
+        h = re.sub(r'\s*/\s*Unknown\s+Bureau\s*$', '', h, flags=re.IGNORECASE)
+        h = re.sub(r'\s*/\s*Unknown\s+Studio\s*$', '', h, flags=re.IGNORECASE)
+        h = re.sub(r'\bVarious\b', '', h, flags=re.IGNORECASE)
+        h = re.sub(r'  +', ' ', h).strip()
+        return h
+
+    headline_line_1 = _clean_headline(headline_line_1)
+    headline_line_2 = _clean_headline(headline_line_2)
 
     return {
-        "headline": headline,
+        "headline_line_1": headline_line_1,
+        "headline_line_2": headline_line_2,
         "summary": summary,
         "tag": tag,     # backward compat: first tag as string (e.g., "#culture")
         "tags": tags     # new: list of tags (e.g., ["#culture", "sweden"])
