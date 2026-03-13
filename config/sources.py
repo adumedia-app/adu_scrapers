@@ -219,6 +219,15 @@ SOURCES = {
         "custom_scraper": True,
         "is_studio": True,
     },
+    "foster_and_partners": {
+        "id": "foster_and_partners",
+        "name": "Foster + Partners",
+        "domains": ["fosterandpartners.com", "www.fosterandpartners.com"],
+        "tier": 1,
+        "region": "europe",
+        "custom_scraper": True,
+        "is_studio": True,
+    },
 
     # =========================================================================
     # North America
