@@ -3,14 +3,18 @@
 Mecanoo Custom Scraper
 Site: https://www.mecanoo.nl/News/Project-updates
 Strategy: HTTP + BeautifulSoup (DotNetNuke CMS, server-side rendered)
-Dates: No dates on listing page — relies on article tracker for "new" detection
+Dates: Extracted from image filenames (e.g. "2026 03 04 Project Name.jpg")
 Links: /News/ID/NNN/article-slug (sequential numeric IDs)
-Structure: No card containers — articles are h2 > a[href*='/News/ID/'] elements
-           with image links as siblings. We extract directly from h2 title links.
+Structure: <article class="News artNormal"> cards with image + title inside
+
+IMPORTANT: The listing page shows ALL articles since ~2014 (300+).
+We only extract the first MAX_LISTING_ARTICLES (20) since the page
+is sorted newest-first. This avoids sending 300+ URLs through the
+article tracker and AI pipeline every run.
 """
 
 import re
-from typing import List
+from typing import List, Optional
 from bs4 import BeautifulSoup
 
 from operators.custom_scrapers.studio_scraper_base import StudioHttpScraper
@@ -31,64 +35,121 @@ class MecanooScraper(StudioHttpScraper):
     date_format = ""
     image_selector = ""
 
+    # Only process this many articles from the listing page.
+    # The page is sorted newest-first, so 5 covers several months.
+    MAX_LISTING_ARTICLES = 5
+
     # Article URL pattern: /News/ID/NNN/slug
     _ARTICLE_URL_RE = re.compile(r"/News/ID/\d+/")
+
+    # Date pattern in image filenames: "2026 03 04" or "2025 12 31"
+    _IMG_DATE_RE = re.compile(r"(\d{4})\s+(\d{2})\s+(\d{2})")
+
+    def _extract_date_from_image(self, article_el) -> Optional[str]:
+        """
+        Try to extract a date from image filename attributes.
+
+        Mecanoo's CMS stores images with date prefixes like:
+            /Portals/www/Images/News/2026 03 04 Project Name.jpg
+
+        These appear in data-original, data-original-src, or src attributes.
+
+        Returns:
+            ISO date string (e.g. "2026-03-04") or None
+        """
+        img = article_el.select_one("img")
+        if not img:
+            return None
+
+        # Check all image attributes that might contain the filename
+        for attr in ["data-original", "data-original-src", "src"]:
+            val = img.get(attr, "")
+            if not val:
+                continue
+            match = self._IMG_DATE_RE.search(val)
+            if match:
+                year, month, day = match.groups()
+                return f"{year}-{month}-{day}"
+
+        return None
 
     def _extract_articles_from_soup(self, soup: BeautifulSoup) -> List[dict]:
         """
         Extract articles from Mecanoo's DotNetNuke news listing.
 
-        The page has no card wrappers. Each article appears as:
-            <a href="/News/ID/733/slug"><img ...></a>
-            <h2><a href="/News/ID/733/slug">Title text</a></h2>
+        Each article is wrapped in: <article class="News artNormal">
+        containing an image link and an h2 title link.
 
-        We find all h2 > a links matching /News/ID/NNN/ pattern,
-        then look for a sibling image link with the same URL.
+        We limit to MAX_LISTING_ARTICLES (20) since the page lists
+        ALL articles (300+) going back years.
         """
         articles = []
         seen_urls = set()
 
-        # Find all links matching the article URL pattern
-        all_links = soup.find_all("a", href=self._ARTICLE_URL_RE)
-        print(f"[{self.source_id}] Found {len(all_links)} links matching /News/ID/NNN/ pattern")
+        # Find all article cards
+        cards = soup.select("article.News")
+        print(f"[{self.source_id}] Found {len(cards)} article cards on page")
+        print(f"[{self.source_id}] Processing first {self.MAX_LISTING_ARTICLES} (newest)")
 
-        for link in all_links:
-            href = link.get("href", "")
-            full_url = self._resolve_url(href)
+        for card in cards[:self.MAX_LISTING_ARTICLES]:
+            try:
+                # --- Link: find the title link matching /News/ID/NNN/ ---
+                title_link = card.select_one("h2 a[href]")
+                if not title_link:
+                    continue
 
-            # Deduplicate (each article has 2 links: image + title)
-            if full_url in seen_urls:
-                continue
+                href = title_link.get("href", "")
+                if not self._ARTICLE_URL_RE.search(href):
+                    continue
 
-            # Get title text — skip image-only links (no text)
-            title_text = link.get_text(strip=True)
-            if not title_text or len(title_text) < 3:
-                continue
+                full_url = self._resolve_url(href)
 
-            seen_urls.add(full_url)
+                # Deduplicate
+                if full_url in seen_urls:
+                    continue
+                seen_urls.add(full_url)
 
-            # Try to find the sibling image link with the same href
-            image_url = None
-            parent = link.parent  # likely h2
-            if parent:
-                prev_sibling = parent.find_previous_sibling("a", href=href)
-                if prev_sibling:
-                    img = prev_sibling.find("img")
-                    if img:
-                        for attr in ["src", "data-src"]:
-                            val = img.get(attr)
+                # --- Title ---
+                title_text = title_link.get_text(strip=True)
+                if not title_text or len(title_text) < 3:
+                    continue
+
+                # --- Date from image filename ---
+                date_str = self._extract_date_from_image(card)
+
+                # --- Image ---
+                image_url = None
+                img_link = card.select_one("div.artImage a img")
+                if img_link:
+                    for attr in ["data-original", "data-original-src", "src"]:
+                        val = img_link.get(attr)
+                        if val and not val.startswith("data:"):
+                            # Skip the resized/thumbnail URLs, prefer original
+                            if "/DesktopModules/" in val:
+                                # This is a thumbnail URL, try data-original instead
+                                continue
+                            image_url = self._resolve_url(val)
+                            break
+                    # Fallback: use thumbnail URL if no original found
+                    if not image_url:
+                        for attr in ["data-original", "data-original-src", "src"]:
+                            val = img_link.get(attr)
                             if val and not val.startswith("data:"):
                                 image_url = self._resolve_url(val)
                                 break
 
-            articles.append({
-                "url": full_url,
-                "title": title_text,
-                "date": None,  # No dates on listing page
-                "image_url": image_url,
-            })
+                articles.append({
+                    "url": full_url,
+                    "title": title_text,
+                    "date": date_str,
+                    "image_url": image_url,
+                })
 
-        print(f"[{self.source_id}] Extracted {len(articles)} unique articles")
+            except Exception as e:
+                print(f"[{self.source_id}] Error parsing card: {e}")
+                continue
+
+        print(f"[{self.source_id}] Extracted {len(articles)} articles (from {len(cards)} total on page)")
         return articles
 
 
