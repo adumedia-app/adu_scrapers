@@ -409,7 +409,7 @@ class ArticleScraper:
                     "full_content": content,
                     "images": images,
                     "image_count": len(images),
-                    "hero_image": hero_image,
+                    "hero_image": hero_image or result.get("hero_image"),
                     "scrape_success": True,
                     "scrape_time": processing_time,
                     "content_length": len(content),
@@ -423,7 +423,7 @@ class ArticleScraper:
                 result.update({
                     "full_content": "",
                     "images": [],
-                    "hero_image": hero_image,  # Still save hero image even if content extraction failed
+                    "hero_image": hero_image or result.get("hero_image"), # Still save hero image even if content extraction failed
                     "scrape_success": False,
                     "scrape_error": "Content too short or empty"
                 })

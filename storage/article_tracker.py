@@ -85,6 +85,9 @@ class ArticleTracker:
         This is the main method for detecting new articles.
         Respects TEST_MODE: when enabled, returns all URLs as "new".
 
+        Uses batched queries to avoid exceeding PostgREST URL length
+        limits when checking large numbers of URLs (e.g. 300+).
+
         Args:
             source_id: Source identifier (e.g., 'bauwelt')
             urls: List of article URLs found on homepage
@@ -104,20 +107,25 @@ class ArticleTracker:
             return urls
 
         try:
-            # Query Supabase for existing URLs
-            response = self.client.table("scraped_articles")\
-                .select("url")\
-                .eq("source_id", source_id)\
-                .in_("url", urls)\
-                .execute()
+            # Batch the .in_() query to avoid exceeding PostgREST
+            # URL length limits (347 long URLs ≈ 35KB query string)
+            BATCH_SIZE = 50
+            seen_urls = set()
 
-            # Get set of seen URLs
-            seen_urls = set(row["url"] for row in response.data)
+            for i in range(0, len(urls), BATCH_SIZE):
+                batch = urls[i:i + BATCH_SIZE]
+                response = self.client.table("scraped_articles")\
+                    .select("url")\
+                    .eq("source_id", source_id)\
+                    .in_("url", batch)\
+                    .execute()
+
+                seen_urls.update(row["url"] for row in response.data)
 
             # Return URLs not in database
             new_urls = [url for url in urls if url not in seen_urls]
 
-            print(f"   Database: {len(seen_urls)} seen, {len(new_urls)} new")
+            print(f"   Database: {len(seen_urls)} seen, {len(new_urls)} new (checked in {(len(urls) - 1) // BATCH_SIZE + 1} batches)")
 
             return new_urls
 

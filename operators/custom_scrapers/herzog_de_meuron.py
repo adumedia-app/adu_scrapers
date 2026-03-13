@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from html import unescape
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from operators.custom_scrapers.studio_scraper_base import StudioHttpScraper
 from operators.custom_scraper_base import custom_scraper_registry
@@ -69,6 +69,7 @@ class HerzogDeMeuronScraper(StudioHttpScraper):
         """
         print(f"[{self.source_id}] Starting fetch via embedded JSON...")
         await self._ensure_tracker()
+        assert self.tracker is not None
 
         try:
             # Step 1: Fetch the news page HTML
@@ -109,6 +110,7 @@ class HerzogDeMeuronScraper(StudioHttpScraper):
                     title=data.get("title", ""),
                     link=url,
                     published=data.get("date"),
+                    image_url=data.get("image_url"),
                 )
                 if self._validate_article(article):
                     new_articles.append(article)
@@ -136,7 +138,7 @@ class HerzogDeMeuronScraper(StudioHttpScraper):
         soup = BeautifulSoup(html, "html.parser")
         script_tag = soup.find("script", {"id": "postlist-json"})
 
-        if not script_tag or not script_tag.string:
+        if not script_tag or not isinstance(script_tag, Tag) or not script_tag.string:
             print(f"[{self.source_id}] Could not find postlist-json script tag")
             return []
 
@@ -247,12 +249,15 @@ class HerzogDeMeuronScraper(StudioHttpScraper):
         try:
             soup = BeautifulSoup(teaser_html, "html.parser")
             img = soup.find("img", {"data-srcset": True})
-            if not img:
+            if not img or not isinstance(img, Tag):
                 return None
 
-            srcset = img.get("data-srcset", "")
-            if not srcset:
+            srcset_val = img.get("data-srcset", "")
+            if not srcset_val:
                 return None
+
+            # .get() can return a list for multi-value attrs — normalize to str
+            srcset = srcset_val if isinstance(srcset_val, str) else ",".join(srcset_val)
 
             # Parse srcset — entries like "url 1600w, url 1000w, ..."
             # Pick the largest (last entry, or parse widths)

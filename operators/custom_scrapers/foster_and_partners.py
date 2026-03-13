@@ -64,6 +64,7 @@ class FosterAndPartnersScraper(StudioHttpScraper):
         """
         print(f"[{self.source_id}] Starting fetch via Umbraco CMS API...")
         await self._ensure_tracker()
+        assert self.tracker is not None
 
         try:
             # Step 1: Fetch articles from API
@@ -99,6 +100,7 @@ class FosterAndPartnersScraper(StudioHttpScraper):
                     title=data.get("title", ""),
                     link=url,
                     published=data.get("date"),
+                    image_url=data.get("image_url"),
                 )
                 if self._validate_article(article):
                     new_articles.append(article)

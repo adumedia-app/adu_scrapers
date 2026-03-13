@@ -397,7 +397,8 @@ class BaseCustomScraper(ABC):
         self,
         title: str,
         link: str,
-        published: Optional[str] = None
+        published: Optional[str] = None,
+        image_url: Optional[str] = None
     ) -> dict:
         """
         Create a MINIMAL article dict for custom scrapers.
@@ -423,7 +424,7 @@ class BaseCustomScraper(ABC):
             "custom_scraped": True,
             # These will be filled by scraper.py:
             "description": "",
-            "hero_image": None,
+            "hero_image": {"url": image_url} if image_url else None,
             "full_content": ""
         }
 
