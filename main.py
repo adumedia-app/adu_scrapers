@@ -479,8 +479,15 @@ def save_candidates_to_r2(articles: list, r2: R2Storage) -> list:
             if hero and hero.get("bytes"):
                 image_bytes = hero["bytes"]
 
+            # Sources with efficient CDN compression (e.g. WebP) can be smaller but still high quality
+            SKIP_SIZE_CHECK = {"snohetta"}
+
             # Discard articles with missing or too-small images
-            if not image_bytes or len(image_bytes) < MIN_IMAGE_SIZE:
+            source_id = article.get("source_id", "")
+            if not image_bytes:
+                print(f"   ⚠️  Skipping (no image): {article.get('title', '')[:50]}")
+                continue
+            if len(image_bytes) < MIN_IMAGE_SIZE and source_id not in SKIP_SIZE_CHECK:
                 size_kb = len(image_bytes) / 1024 if image_bytes else 0
                 print(f"   ⚠️  Skipping (image {size_kb:.0f}KB < 150KB): {article.get('title', '')[:50]}")
                 continue
