@@ -93,7 +93,7 @@ from operators.custom_scrapers.hassell import HassellScraper
 from operators.custom_scrapers.populous import PopulousScraper
 from operators.custom_scrapers.studio_gang import StudioGangScraper
 from operators.custom_scrapers.som import SomScraper
-
+from operators.custom_scrapers.herzog_de_meuron import HerzogDeMeuronScraper
 
 # Default configuration
 DEFAULT_HOURS_LOOKBACK = 24
@@ -127,6 +127,7 @@ CUSTOM_SCRAPER_MAP = {
     "populous": PopulousScraper,
     "studio_gang": StudioGangScraper,
     "som": SomScraper,
+    "herzog_de_meuron": HerzogDeMeuronScraper,
 }
 
 

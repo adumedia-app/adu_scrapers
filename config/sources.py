@@ -210,6 +210,15 @@ SOURCES = {
         "custom_scraper": True,
         "is_studio": True,
     },
+    "herzog_de_meuron": {
+        "id": "herzog_de_meuron",
+        "name": "Herzog & de Meuron",
+        "domains": ["herzogdemeuron.com", "www.herzogdemeuron.com"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+        "is_studio": True,
+    },
 
     # =========================================================================
     # North America
