@@ -38,6 +38,20 @@ from operators.custom_scraper_base import BaseCustomScraper, custom_scraper_regi
 from storage.article_tracker import ArticleTracker
 
 
+def _get_str_attr(tag: Tag, attr: str) -> Optional[str]:
+    """Safely get a string attribute from a BS4 Tag.
+
+    BS4's .get() and [] can return str | list[str] for multi-value attrs.
+    This helper normalises to a single str or None.
+    """
+    val = tag.get(attr)
+    if val is None:
+        return None
+    if isinstance(val, list):
+        return val[0] if val else None
+    return val
+
+
 class StudioHttpScraper(BaseCustomScraper):
     """
     Lightweight HTTP scraper base for architecture studio news pages.
@@ -214,17 +228,23 @@ class StudioHttpScraper(BaseCustomScraper):
         # First try the link_selector within card
         if self.link_selector:
             link_el = card.select_one(self.link_selector)
-            if link_el and link_el.get("href"):
-                return link_el["href"]
+            if link_el:
+                href = _get_str_attr(link_el, "href")
+                if href:
+                    return href
 
         # If card itself is a link
-        if card.name == "a" and card.get("href"):
-            return card["href"]
+        if card.name == "a":
+            href = _get_str_attr(card, "href")
+            if href:
+                return href
 
         # Try any <a> within card
         a_tag = card.find("a", href=True)
-        if a_tag:
-            return a_tag["href"]
+        if a_tag and isinstance(a_tag, Tag):
+            href = _get_str_attr(a_tag, "href")
+            if href:
+                return href
 
         return None
 
@@ -329,7 +349,7 @@ class StudioHttpScraper(BaseCustomScraper):
 
         # Try common image attributes
         for attr in ["src", "data-src", "data-lazy-src", "srcset"]:
-            val = img_el.get(attr)
+            val = _get_str_attr(img_el, attr)
             if val:
                 # For srcset, take first URL
                 if attr == "srcset":
@@ -396,6 +416,7 @@ class StudioHttpScraper(BaseCustomScraper):
         """
         print(f"[{self.source_id}] Starting HTTP scraping...")
         await self._ensure_tracker()
+        assert self.tracker is not None
 
         try:
             # Step 1: Fetch HTML
@@ -439,6 +460,7 @@ class StudioHttpScraper(BaseCustomScraper):
                     title=data.get("title", ""),
                     link=url,
                     published=data.get("date"),  # May be None
+                    image_url=data.get("image_url"),
                 )
 
                 if self._validate_article(article):
