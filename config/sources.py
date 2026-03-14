@@ -228,6 +228,15 @@ SOURCES = {
         "custom_scraper": True,
         "is_studio": True,
     },
+    "heatherwick": {
+        "id": "heatherwick",
+        "name": "Heatherwick Studio",
+        "domains": ["heatherwick.com", "www.heatherwick.com"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+        "is_studio": True,
+    },
 
     # =========================================================================
     # North America
