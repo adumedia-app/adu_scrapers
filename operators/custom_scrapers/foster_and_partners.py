@@ -10,7 +10,7 @@ Notes:
     - API endpoint: https://content.fosterandpartners.com/api/articles
     - Supports pagination via pageSize and pageIndex params
     - Each article has: title, reference (slug), date, heroImage, content (snippet)
-    - Article URLs: https://www.fosterandpartners.com/news/news-article-list/{reference}/
+    - Article URLs: https://www.fosterandpartners.com/news/{reference}
     - Hero images: https://content.fosterandpartners.com{heroImage}
     - Very high-profile global practice — one of the world's largest architecture firms
     - ~1059 articles total in the archive
@@ -49,8 +49,6 @@ class FosterAndPartnersScraper(StudioHttpScraper):
     excluded_patterns = [
         "/news/$",
         "/news$",
-        "/news/news-article-list/$",
-        "/news/news-article-list$",
         "/news/type/",
     ]
 
@@ -288,7 +286,7 @@ class FosterAndPartnersScraper(StudioHttpScraper):
                     continue
 
                 # Build full article URL
-                url = f"{self.base_url}/news/news-article-list/{reference}/"
+                url = f"{self.base_url}/news/{reference}"
 
                 # Parse date (ISO format: "2026-02-10T00:00:00Z")
                 date_iso = None
@@ -326,7 +324,7 @@ class FosterAndPartnersScraper(StudioHttpScraper):
         path = url.split("fosterandpartners.com")[-1] if "fosterandpartners.com" in url else url
         clean_path = path.rstrip("/")
         skip_paths = [
-            "/news", "/news/news-article-list",
+            "/news",
             "/projects", "/studio", "/people",
             "/expertise", "/insights", "/careers", "/contact",
         ]
