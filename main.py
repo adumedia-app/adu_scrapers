@@ -96,6 +96,7 @@ from operators.custom_scrapers.som import SomScraper
 from operators.custom_scrapers.herzog_de_meuron import HerzogDeMeuronScraper
 from operators.custom_scrapers.foster_and_partners import FosterAndPartnersScraper
 from operators.custom_scrapers.heatherwick import HeatherwickScraper
+from operators.custom_scrapers.gmp import GmpScraper
 
 # Default configuration
 DEFAULT_HOURS_LOOKBACK = 24
@@ -132,6 +133,7 @@ CUSTOM_SCRAPER_MAP = {
     "herzog_de_meuron": HerzogDeMeuronScraper,
     "foster_and_partners": FosterAndPartnersScraper,
     "heatherwick": HeatherwickScraper,
+    "gmp": GmpScraper,
 }
 
 

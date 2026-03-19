@@ -237,6 +237,15 @@ SOURCES = {
         "custom_scraper": True,
         "is_studio": True,
     },
+    "gmp": {
+        "id": "gmp",
+        "name": "gmp Architekten",
+        "domains": ["gmp.de", "www.gmp.de"],
+        "tier": 2,
+        "region": "europe",
+        "custom_scraper": True,
+        "is_studio": True,
+    },
 
     # =========================================================================
     # North America
