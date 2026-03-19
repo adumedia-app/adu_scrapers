@@ -18,7 +18,7 @@ Guidelines:
 - Header line 2: TYPOLOGY / CITY, COUNTRY (e.g., "Commercial / Tokyo, Japan"). If any part is unavailable, simply skip that part. Never write "Unknown" or "Various". If the entire line would be empty, skip it entirely.
 - For news articles about projects, write a two-sentence summary in a professional British editorial style. Sentence 1: state project name, location, architect/studio (if explicitely mentioned), typology, scale (if mentioned) and key design features (if mentioned). Sentence 2: state key details about the project — status, significance, planning context, or professional response. 
 - If the news article is not about a project, but about another related topic, write a 2-sentence summary of the article for professional audience, do not use expressions like "the artice discusses", just summarize it. 
-- Add appropriate tag from this list: #residential, #hospitality, #office, #culture, #education, #public, #infrastructure, #landscape, #retail, #interior, #masterplan, #reuse, #mixeduse, #awards
+- Add ONE tag from this exact list ONLY: #residential, #hospitality, #office, #culture, #education, #public, #infrastructure, #landscape, #retail, #interior, #masterplan, #reuse, #mixeduse, #awards. Do NOT invent new tags. If none of these fit, skip the tag line entirely.
 - If the project name is in the language that doesn't match the country language (for example, in ArchDaily Brasil a project in China is named in Portuguese), translate the name of the project to English
 - Keep tone neutral and factual, avoid generic praise and subjective adjectives
 - Write for a specialist professional audience. 
@@ -54,11 +54,11 @@ Description: {description}
 Source: {url}
 
 Respond with ONLY these lines (no blank lines between them):
-1. Title in format: PROJECT NAME / ARCHITECT OR BUREAU or just PROJECT NAME if author unknown or irrelevant. DO NOT write Unknown in the title
-2. TYPOLOGY / CITY, COUNTRY (e.g., "Culture / Šeduva, Lithuania"). Skip any unavailable parts. If all parts are unknown, skip this line entirely. Never write "Unknown" or "Various".
-3. A 2-sentence summary
-4. 1 relevant tag from this exact list: #residential, #hospitality, #office, #culture, #education, #public, #infrastructure, #landscape, #retail, #interior, #masterplan, #reuse, #mixeduse
-5. Country tag: the country name in English, lowercase, no spaces — use common short forms like "uk" not "unitedkingdom". If the country is unclear, skip this line entirely.
+1. Title in format: PROJECT NAME / ARCHITECT OR BUREAU — or just PROJECT NAME if author is unknown or irrelevant. DO NOT write "Unknown" in the title.
+2. TYPOLOGY / CITY, COUNTRY (e.g., "Culture / Šeduva, Lithuania"). Every part is optional — you can write just "Culture", just "Tokyo, Japan", or skip this line entirely if nothing is known. Never write "Unknown" or "Various".
+3. A 2-sentence summary.
+4. ONE tag from this exact list ONLY: #residential, #hospitality, #office, #culture, #education, #public, #infrastructure, #landscape, #retail, #interior, #masterplan, #reuse, #mixeduse, #awards — do NOT invent new tags. If none fit, skip this line.
+5. Country name in English, lowercase, no spaces (e.g., "uk", "brazil", "japan"). If unclear, skip this line.
 
 EXAMPLE FORMAT:
 
@@ -75,16 +75,11 @@ SUMMARIZE_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
 ])
 
 
-# Typologies used in the second header line (for parser detection)
-_KNOWN_TYPOLOGIES = {
+# Strict whitelist — must match the tag list in the prompt
+_VALID_TAGS = {
     'residential', 'hospitality', 'office', 'culture', 'education',
     'public', 'infrastructure', 'landscape', 'retail', 'interior',
-    'masterplan', 'reuse', 'mixeduse',
-    # Common variants the AI might produce
-    'commercial', 'mixed-use', 'civic', 'religious', 'industrial',
-    'museum', 'library', 'sports', 'healthcare', 'housing',
-    'renovation', 'pavilion', 'tower', 'bridge', 'memorial',
-    'installation', 'adaptive', 'airport', 'urbanism',
+    'masterplan', 'reuse', 'mixeduse', 'awards',
 }
 
 
@@ -111,11 +106,11 @@ def _is_typology_location_line(line: str) -> bool:
     first_word = words[0].replace('-', '')
 
     # Check against known typologies
-    if first_word in _KNOWN_TYPOLOGIES:
+    if first_word in _VALID_TAGS:
         return True
 
     # Handle "mixed use" as two words
-    if len(words) >= 2 and ''.join(words[:2]) in _KNOWN_TYPOLOGIES:
+    if len(words) >= 2 and ''.join(words[:2]) in _VALID_TAGS:
         return True
 
     return False
@@ -192,6 +187,10 @@ def parse_summary_response(response_text: str) -> dict:
         headline_line_1 = ""
         headline_line_2 = ""
         summary = lines[0]
+
+    # Drop typology tag if not in whitelist
+    if tags and tags[0].lower().strip().lstrip('#') not in _VALID_TAGS:
+        tags.pop(0)
 
     # First tag (typology) as string for backward compatibility
     tag = tags[0] if tags else ""
